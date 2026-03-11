@@ -21,3 +21,6 @@ dependencies = [
     "typer>=0.24.1",
     "uvicorn>=0.41.0",
 ]
+
+[project.scripts]
+eod = "app.cli:app"
