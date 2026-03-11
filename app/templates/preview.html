@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Preview - EOD Reporter{% endblock %}
+
+{% block content %}
+<h1>EOD Preview - {{ target_date.strftime("%B %#d, %Y") }}</h1>
+
+{% if report %}
+<section class="card">
+    <div class="status-badge status-{{ report.status.value }}">
+        {{ report.status.value | upper }}
+    </div>
+
+    <div class="preview-box">
+        <h3>{{ target_date.strftime("%B %#d, %Y") }}</h3>
+        <p>{{ report.narrative }}</p>
+    </div>
+
+    {% if report.status.value != "posted" %}
+    <details>
+        <summary>Edit narrative</summary>
+        <form method="post" action="/reports/{{ report.id }}/update">
+            <textarea name="narrative" rows="8">{{ report.narrative }}</textarea>
+            <button type="submit">Save Changes</button>
+        </form>
+    </details>
+
+    <form method="post" action="/reports/{{ report.id }}/post-to-teams" class="post-form">
+        <button type="submit" class="btn-primary btn-post"
+                onclick="return confirm('Post this EOD to Teams?')">
+            Post to Teams
+        </button>
+    </form>
+    {% else %}
+    <p class="posted-notice">
+        Posted to Teams at {{ report.posted_at.strftime("%H:%M on %B %#d, %Y") }}
+    </p>
+    {% endif %}
+
+    <form method="post" action="/reports/generate?target_date={{ target_date.isoformat() }}">
+        <button type="submit" class="btn-secondary">Regenerate</button>
+    </form>
+</section>
+{% else %}
+<section class="card">
+    <p>No report generated for this date yet.</p>
+    <a href="/" class="btn-primary">Go to Dashboard</a>
+</section>
+{% endif %}
+{% endblock %}

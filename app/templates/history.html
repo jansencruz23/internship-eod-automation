@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}History - EOD Reporter{% endblock %}
+
+{% block content %}
+<h1>Report History</h1>
+
+{% if reports %}
+{% for report in reports %}
+<section class="card history-card">
+    <div class="history-header">
+        <h3>{{ report.date.strftime("%B %#d, %Y") }}</h3>
+        <span class="status-badge status-{{ report.status.value }}">
+            {{ report.status.value }}
+        </span>
+    </div>
+    <p>{{ report.narrative }}</p>
+    <div class="history-meta">
+        Generated: {{ report.generated_at.strftime("%H:%M") }}
+        {% if report.posted_at %}
+        &middot; Posted: {{ report.posted_at.strftime("%H:%M") }}
+        {% endif %}
+    </div>
+</section>
+{% endfor %}
+{% else %}
+<section class="card">
+    <p>No reports yet. Start logging activities and generate your first EOD!</p>
+</section>
+{% endif %}
+{% endblock %}

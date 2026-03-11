@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - EOD Reporter{% endblock %}
+
+{% block content %}
+<h1>{{ today.strftime("%B %#d, %Y") }}</h1>
+
+<!-- Quick Log Form -->
+<section class="card">
+    <h2>Log Activity</h2>
+    <form method="post" action="/activities/log" class="log-form">
+        <input
+            type="text"
+            name="content"
+            placeholder="What did you just do? (e.g., 'Had team huddle for Project 2')"
+            required
+            autofocus
+        >
+        <button type="submit">Log</button>
+    </form>
+</section>
+
+<!-- Today's Activities -->
+<section class="card">
+    <h2>Today's Activities</h2>
+
+    {% for period in ["morning", "afternoon", "evening"] %}
+    <div class="time-group">
+        <h3>{{ period | capitalize }}</h3>
+        {% if grouped_activities[period] %}
+            {% for activity in grouped_activities[period] %}
+            <div class="activity-item">
+                <span class="time-badge">{{ activity.logged_at.strftime("%H:%M") }}</span>
+                <span class="activity-content">{{ activity.content }}</span>
+                <div class="activity-actions">
+                    <button class="btn-delete" title="Delete"
+                            hx-delete="/activities/{{ activity.id }}"
+                            hx-target="closest .activity-item"
+                            hx-swap="outerHTML"
+                            hx-confirm="Delete this activity?">x</button>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="empty">No activities logged</p>
+        {% endif %}
+    </div>
+    {% endfor %}
+</section>
+
+<!-- Generate EOD -->
+<section class="card">
+    <h2>Generate EOD Report</h2>
+    <form method="post" action="/reports/generate">
+        <button type="submit" class="btn-primary" {% if not has_activities %}disabled{% endif %}>
+            Generate Report
+        </button>
+        {% if not has_activities %}
+        <p class="hint">Log some activities first before generating a report.</p>
+        {% endif %}
+    </form>
+</section>
+{% endblock %}
