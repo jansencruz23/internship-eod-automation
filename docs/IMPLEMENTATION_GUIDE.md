@@ -1,6 +1,6 @@
 # EOD Report Automation — Full Implementation Guide
 
-Automate your daily End of Day reports: log activities throughout the day, let a LangGraph agent compile them into a narrative, preview/edit, and post to Microsoft Teams with one click.
+Automate your daily End of Day reports: log activities throughout the day, let a LangGraph agent compile them into a narrative, preview/edit, and post to your Microsoft Teams group chat with one click.
 
 ---
 
@@ -12,7 +12,7 @@ Throughout the day:
                                   (timestamped, auto-categorized)
 
 End of day (scheduled at 5:00 PM, or manual trigger):
-  [APScheduler] ──► [LangGraph Agent] ──► [Preview via Web UI] ──► [User Confirms] ──► [Teams Webhook]
+  [APScheduler] ──► [LangGraph Agent] ──► [Preview via Web UI] ──► [User Confirms] ──► [Power Automate] ──► [Teams Group Chat]
                          │
                     State Graph:
                     1. fetch_activities    → pull today's entries from SQLite
@@ -35,7 +35,7 @@ End of day (scheduled at 5:00 PM, or manual trigger):
 | CLI | **Typer** + **Rich** |
 | Database | **SQLite** via **SQLAlchemy** (sync) |
 | Scheduler | **APScheduler** |
-| Teams Posting | **Adaptive Card** via Teams Workflows Webhook |
+| Teams Posting | **Power Automate** HTTP trigger → posts to group chat as Flow bot |
 | HTTP Client | **httpx** |
 
 ### Skills Applied
@@ -76,7 +76,7 @@ internity/
 │   │   ├── __init__.py
 │   │   ├── activity_service.py             # Activity business logic
 │   │   ├── report_service.py               # Report orchestration
-│   │   └── teams_service.py                # Teams webhook poster
+│   │   └── teams_service.py                # Power Automate → Teams group chat poster
 │   ├── api/
 │   │   ├── __init__.py
 │   │   ├── dependencies.py                 # Shared DI (get_settings, get_teams_poster)
@@ -131,13 +131,33 @@ pip install uv
 3. Click **"Get API Key"** → **"Create API key"**
 4. Copy the key — free, no credit card needed
 
-### Set up Teams Webhook (one-time)
+### Set up Power Automate Flow (one-time)
 
-1. Open Microsoft Teams → go to your target channel
-2. Click the **`...`** menu on the channel → select **"Workflows"**
-3. Search for **"Post to a channel when a webhook request is received"**
-4. Name it `EOD Report Webhook`, select your team and channel
-5. Click **Create** → copy the generated webhook URL
+Since your team uses a **group chat** (not a channel), webhooks won't work. Instead, create a simple Power Automate flow that receives an HTTP request and posts the message to your group chat as Flow bot.
+
+1. Go to [make.powerautomate.com](https://make.powerautomate.com)
+2. Click **+ Create** → **Instant cloud flow** → **Skip** (to start from blank)
+3. Add trigger: search for **"When an HTTP request is received"**
+4. In the trigger, paste this JSON schema in **"Request Body JSON Schema"**:
+   ```json
+   {
+     "type": "object",
+     "properties": {
+       "date": { "type": "string" },
+       "message": { "type": "string" }
+     },
+     "required": ["date", "message"]
+   }
+   ```
+5. Add a new step: search for **"Post message in a chat or channel"** (Microsoft Teams)
+6. Configure it:
+   - **Post as**: Flow bot
+   - **Post in**: Group chat
+   - **Group chat**: Select your team's group chat from the dropdown
+   - **Message**: Click in the field → select **date** from dynamic content, add a line break, then select **message** from dynamic content
+7. **Save** the flow
+8. Go back to the trigger step → copy the **HTTP POST URL** that was generated
+9. Paste this URL into your `.env` as `POWER_AUTOMATE_URL`
 
 ---
 
@@ -192,7 +212,7 @@ touch app/agent/__init__.py
 # .env.example — Copy to .env and fill in your values
 
 GOOGLE_API_KEY=your-api-key-from-aistudio.google.com
-TEAMS_WEBHOOK_URL=https://xxxxx.webhook.office.com/webhookb2/xxxxx
+POWER_AUTOMATE_URL=https://prod-xx.westus.logic.azure.com/workflows/xxxxx
 EOD_SCHEDULE_TIME=17:00
 MODEL_NAME=gemini-2.5-flash
 ```
@@ -203,7 +223,7 @@ MODEL_NAME=gemini-2.5-flash
 # .env — Your actual values
 
 GOOGLE_API_KEY=your-actual-api-key
-TEAMS_WEBHOOK_URL=your-actual-webhook-url
+POWER_AUTOMATE_URL=your-actual-power-automate-http-trigger-url
 EOD_SCHEDULE_TIME=17:00
 MODEL_NAME=gemini-2.5-flash
 ```
@@ -241,7 +261,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     GOOGLE_API_KEY: str
-    TEAMS_WEBHOOK_URL: str
+    POWER_AUTOMATE_URL: str
     EOD_SCHEDULE_TIME: str = "17:00"
     MODEL_NAME: str = "gemini-2.5-flash"
     DATABASE_URL: str = "sqlite:///eod_reporter.db"
@@ -670,6 +690,8 @@ report_service = ReportService()
 
 ### `app/services/teams_service.py`
 
+Posts to your Teams group chat via a Power Automate HTTP trigger. The PA flow receives `{date, message}` and posts it to the group chat as Flow bot.
+
 ```python
 import httpx
 
@@ -677,73 +699,36 @@ from app.models.report import EODReport
 
 
 class TeamsPoster:
-    def __init__(self, webhook_url: str):
-        self.webhook_url = webhook_url
+    def __init__(self, power_automate_url: str):
+        self.power_automate_url = power_automate_url
 
     def post(self, report: EODReport) -> bool:
-        """Post an EOD report to Teams as an Adaptive Card."""
+        """Post an EOD report to the Teams group chat via Power Automate."""
         payload = {
-            "type": "message",
-            "attachments": [
-                {
-                    "contentType": "application/vnd.microsoft.card.adaptive",
-                    "contentUrl": None,
-                    "content": {
-                        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                        "type": "AdaptiveCard",
-                        "version": "1.4",
-                        "body": [
-                            {
-                                "type": "TextBlock",
-                                "text": report.date.strftime("%B %#d, %Y"),
-                                "weight": "Bolder",
-                                "size": "Medium",
-                            },
-                            {
-                                "type": "TextBlock",
-                                "text": report.narrative,
-                                "wrap": True,
-                            },
-                        ],
-                    },
-                }
-            ],
+            "date": report.date.strftime("%B %#d, %Y"),
+            "message": report.narrative,
         }
 
-        response = httpx.post(self.webhook_url, json=payload, timeout=30)
+        response = httpx.post(
+            self.power_automate_url,
+            json=payload,
+            timeout=30,
+        )
         response.raise_for_status()
         return True
 
     def test_connection(self) -> bool:
-        """Send a test message to verify the webhook works."""
+        """Send a test message to verify the Power Automate flow works."""
         payload = {
-            "type": "message",
-            "attachments": [
-                {
-                    "contentType": "application/vnd.microsoft.card.adaptive",
-                    "contentUrl": None,
-                    "content": {
-                        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                        "type": "AdaptiveCard",
-                        "version": "1.4",
-                        "body": [
-                            {
-                                "type": "TextBlock",
-                                "text": "EOD Reporter - Connection Test",
-                                "weight": "Bolder",
-                            },
-                            {
-                                "type": "TextBlock",
-                                "text": "Webhook is working correctly.",
-                                "wrap": True,
-                            },
-                        ],
-                    },
-                }
-            ],
+            "date": "Connection Test",
+            "message": "EOD Reporter is connected. If you see this in your group chat, it's working!",
         }
         try:
-            response = httpx.post(self.webhook_url, json=payload, timeout=30)
+            response = httpx.post(
+                self.power_automate_url,
+                json=payload,
+                timeout=30,
+            )
             response.raise_for_status()
             return True
         except Exception:
@@ -1149,7 +1134,7 @@ from app.services.teams_service import TeamsPoster
 
 
 def get_teams_poster(settings: Settings = Depends(get_settings)) -> TeamsPoster:
-    return TeamsPoster(settings.TEAMS_WEBHOOK_URL)
+    return TeamsPoster(power_automate_url=settings.POWER_AUTOMATE_URL)
 ```
 
 ### `app/api/v1/router.py`
@@ -2002,7 +1987,7 @@ def post(
             raise typer.Exit()
 
         settings = get_settings()
-        poster = TeamsPoster(settings.TEAMS_WEBHOOK_URL)
+        poster = TeamsPoster(power_automate_url=settings.POWER_AUTOMATE_URL)
         poster.post(report)
         report_service.mark_posted(db, report.id)
         console.print("[bold green]Posted to Teams![/bold green]")
@@ -2014,11 +1999,11 @@ def post(
 def test_webhook():
     """Test the Teams webhook connection."""
     settings = get_settings()
-    poster = TeamsPoster(settings.TEAMS_WEBHOOK_URL)
+    poster = TeamsPoster(power_automate_url=settings.POWER_AUTOMATE_URL)
     if poster.test_connection():
-        console.print("[bold green]Webhook is working! Check your Teams channel.[/bold green]")
+        console.print("[bold green]Power Automate flow is working! Check your Teams group chat.[/bold green]")
     else:
-        console.print("[bold red]Webhook test failed. Check the URL in .env.[/bold red]")
+        console.print("[bold red]Flow test failed. Check POWER_AUTOMATE_URL in .env.[/bold red]")
 
 
 if __name__ == "__main__":
@@ -2087,8 +2072,8 @@ uv run eod test-webhook
 | Issue | Fix |
 |---|---|
 | `GOOGLE_API_KEY not set` | Make sure `.env` exists with your key from aistudio.google.com |
-| `TEAMS_WEBHOOK_URL not set` | Add your webhook URL to `.env` |
-| Webhook returns 400/403 | Recreate the webhook in Teams Workflows app |
+| `POWER_AUTOMATE_URL not set` | Add your Power Automate HTTP trigger URL to `.env` |
+| PA flow returns 400/403 | Check the flow is enabled at make.powerautomate.com; verify the JSON schema matches |
 | `ModuleNotFoundError` | Run `uv sync` to install dependencies |
 | Database errors | Delete `eod_reporter.db` and restart (tables recreated automatically) |
 | LLM returns bullet points | Self-review should catch this; if persistent, add more examples to `examples.json` |
