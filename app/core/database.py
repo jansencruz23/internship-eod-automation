@@ -26,4 +26,8 @@ def get_db():
 
 def init_db():
     """Create all tables."""
+    import app.models.activity  # noqa: F401
+    import app.models.report  # noqa: F401
+    import app.models.settings  # noqa: F401
+
     Base.metadata.create_all(bind=engine)

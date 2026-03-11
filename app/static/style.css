@@ -177,6 +177,89 @@ details summary {
 .history-meta { margin-top: 0.75rem; font-size: 0.8rem; color: #888; }
 .posted-notice { color: #27ae60; font-weight: 500; margin: 1rem 0; }
 
+/* ── Settings Rows ── */
+.setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+.setting-row:last-of-type { border-bottom: none; }
+#time-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+#time-container input[type="time"] {
+    padding: 0.4rem 0.6rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-family: inherit;
+}
+#time-container input[type="time"]:focus { outline: none; border-color: #4a6cf7; }
+.save-confirm {
+    color: #27ae60;
+    font-size: 0.8rem;
+    font-weight: 600;
+    animation: fadeOut 2s forwards;
+}
+@keyframes fadeOut {
+    0% { opacity: 1; }
+    70% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* ── Toggle Switch ── */
+.toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+#toggle-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 26px;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background: #ccc;
+    border-radius: 26px;
+    transition: 0.3s;
+}
+.slider::before {
+    content: "";
+    position: absolute;
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 3px;
+    background: white;
+    border-radius: 50%;
+    transition: 0.3s;
+}
+.toggle-switch input:checked + .slider { background: #27ae60; }
+.toggle-switch input:checked + .slider::before { transform: translateX(22px); }
+.toggle-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.toggle-on { color: #27ae60; }
+.toggle-off { color: #888; }
+
 /* ── Misc ── */
 .empty { color: #bbb; font-style: italic; }
 .hint { color: #888; font-size: 0.85rem; margin-top: 0.5rem; }

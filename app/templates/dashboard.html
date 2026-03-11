@@ -59,4 +59,38 @@
         {% endif %}
     </form>
 </section>
+
+<!-- Scheduler Settings -->
+<section class="card">
+    <h2>Scheduler Settings</h2>
+
+    <div class="setting-row">
+        <span>Scheduled time</span>
+        <div id="time-container">
+            <input type="time" name="schedule_time" value="{{ schedule_time }}"
+                   hx-post="/reports/update-schedule-time"
+                   hx-target="#time-container"
+                   hx-swap="innerHTML"
+                   hx-trigger="change">
+        </div>
+    </div>
+
+    <div class="setting-row">
+        <span>Auto-post to Teams</span>
+        <div id="toggle-container">
+            <label class="toggle-switch">
+                <input type="checkbox" {{ "checked" if auto_post_enabled }}
+                       hx-post="/reports/toggle-auto-post"
+                       hx-target="#toggle-container"
+                       hx-swap="innerHTML">
+                <span class="slider"></span>
+            </label>
+            <span class="toggle-label toggle-{{ 'on' if auto_post_enabled else 'off' }}">
+                {{ "ON" if auto_post_enabled else "OFF" }}
+            </span>
+        </div>
+    </div>
+
+    <p class="hint">The report is generated daily at the scheduled time. When auto-post is on, it also posts to Teams automatically.</p>
+</section>
 {% endblock %}

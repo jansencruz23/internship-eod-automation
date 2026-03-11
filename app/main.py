@@ -7,8 +7,10 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
 from app.core.database import init_db, SessionLocal
+from app.models.settings import AppSettings
 from app.services.activity_service import activity_service
 from app.services.report_service import report_service
+from app.services.teams_service import TeamsPoster
 from app.agent.graph import eod_agent
 from app.api.v1.router import api_router
 from app.api.v1.endpoints.pages import router as pages_router
@@ -40,10 +42,21 @@ def scheduled_eod_generation():
             }
         )
         narrative = result.get("final_narrative", result.get("draft", ""))
-        report_service.save(db, today, narrative)
-        print(
-            f"[Scheduler] EOD draft saved. Visit /reports/preview to review and post."
-        )
+        report = report_service.save(db, today, narrative)
+
+        # Check auto-post setting
+        app_settings_row = db.query(AppSettings).first()
+        if app_settings_row and app_settings_row.auto_post_enabled:
+            try:
+                settings = get_settings()
+                poster = TeamsPoster(settings.POWER_AUTOMATE_URL)
+                poster.post(report)
+                report_service.mark_posted(db, report.id)
+                print("[Scheduler] Auto-posted to Teams.")
+            except Exception as e:
+                print(f"[Scheduler] Auto-post failed: {e}")
+        else:
+            print("[Scheduler] Draft saved. Visit /reports/preview to review and post.")
     finally:
         db.close()
 
@@ -53,8 +66,18 @@ async def lifespan(app: FastAPI):
     # Startup
     init_db()
 
-    settings = get_settings()
-    hour, minute = map(int, settings.EOD_SCHEDULE_TIME.split(":"))
+    # Use DB schedule_time if available, otherwise fall back to .env
+    db = SessionLocal()
+    try:
+        app_settings_row = db.query(AppSettings).first()
+        if app_settings_row and app_settings_row.schedule_time:
+            schedule_time = app_settings_row.schedule_time
+        else:
+            schedule_time = get_settings().EOD_SCHEDULE_TIME
+    finally:
+        db.close()
+
+    hour, minute = map(int, schedule_time.split(":"))
     scheduler.add_job(
         scheduled_eod_generation,
         "cron",
@@ -63,7 +86,7 @@ async def lifespan(app: FastAPI):
         id="eod_generation",
     )
     scheduler.start()
-    print(f"[Scheduler] EOD generation scheduled daily at {settings.EOD_SCHEDULE_TIME}")
+    print(f"[Scheduler] EOD generation scheduled daily at {schedule_time}")
 
     yield
 

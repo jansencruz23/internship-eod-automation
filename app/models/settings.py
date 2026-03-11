@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Boolean
+from sqlalchemy import Column, Integer, Boolean, String
 
 from app.core.database import Base
 
@@ -8,3 +8,4 @@ class AppSettings(Base):
 
     id = Column(Integer, primary_key=True, default=1)
     auto_post_enabled = Column(Boolean, default=False)
+    schedule_time = Column(String, default="15:35")
