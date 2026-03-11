@@ -16,12 +16,10 @@ End of day (scheduled at 5:00 PM, or manual trigger):
                          │
                     State Graph:
                     1. fetch_activities    → pull today's entries from SQLite
-                    2. group_by_time      → morning / afternoon / evening
-                    3. generate_draft     → Claude writes narrative EOD
-                    4. self_review        → Claude checks quality
-                    5. (loop if needed)   → revise up to 2 times
-                    6. return draft       → user previews + confirms
-                    7. post_to_teams      → Adaptive Card via webhook
+                    2. generate_draft     → Gemini writes narrative EOD
+                    3. self_review        → Gemini checks quality (structured output)
+                    4. (revise if needed) → loop back, max 2 revisions
+                    5. finalize           → return draft for user preview
 ```
 
 ---
@@ -31,14 +29,20 @@ End of day (scheduled at 5:00 PM, or manual trigger):
 | Component | Technology |
 |---|---|
 | Package Manager | **uv** |
+| LLM | **Gemini 2.5 Flash** via `langchain-google-genai` |
 | LLM Orchestration | **LangGraph** + **LangChain** |
-| LLM | **Claude Sonnet 4** via `langchain-anthropic` |
 | Web Interface | **FastAPI** + **Jinja2** + **HTMX** |
 | CLI | **Typer** + **Rich** |
-| Database | **SQLite** via **SQLAlchemy** |
+| Database | **SQLite** via **SQLAlchemy** (sync) |
 | Scheduler | **APScheduler** |
-| Teams Posting | **Teams Workflows Webhook** (HTTP POST with Adaptive Card) |
+| Teams Posting | **Adaptive Card** via Teams Workflows Webhook |
 | HTTP Client | **httpx** |
+
+### Skills Applied
+
+- **`fastapi-templates`** — Project structure: `core/`, `models/`, `schemas/`, `repositories/`, `services/`, `api/v1/endpoints/`
+- **`architecture-patterns`** — Clean Architecture: repositories as data-access adapters, services as use-case layer
+- **`prompt-engineering-patterns`** — System prompt `[Role]+[Expertise]+[Guidelines]+[Format]+[Constraints]`, structured output with Pydantic, CoT self-review, few-shot examples
 
 ---
 
@@ -46,35 +50,60 @@ End of day (scheduled at 5:00 PM, or manual trigger):
 
 ```
 internity/
-├── .agents/skills/                    # (existing — unchanged)
-├── eod_reporter/
+├── .agents/skills/                         # (existing — unchanged)
+├── app/
 │   ├── __init__.py
-│   ├── main.py                        # FastAPI app + APScheduler
-│   ├── cli.py                         # Typer CLI
-│   ├── models.py                      # SQLAlchemy + Pydantic models
-│   ├── database.py                    # SQLite connection
-│   ├── agent/
+│   ├── main.py                             # FastAPI app + lifespan (APScheduler)
+│   ├── cli.py                              # Typer CLI
+│   ├── core/
 │   │   ├── __init__.py
-│   │   ├── graph.py                   # LangGraph state graph
-│   │   ├── nodes.py                   # Graph node functions
-│   │   ├── state.py                   # TypedDict state schema
-│   │   └── prompts.py                 # Prompt templates + few-shot examples
-│   ├── routers/
+│   │   ├── config.py                       # Centralized Settings (pydantic-settings)
+│   │   └── database.py                     # Engine, SessionLocal, Base, get_db
+│   ├── models/
 │   │   ├── __init__.py
-│   │   ├── activities.py              # Activity CRUD routes
-│   │   └── reports.py                 # EOD report routes
+│   │   ├── activity.py                     # Activity table + TimePeriod enum
+│   │   └── report.py                       # EODReport table + ReportStatus enum
+│   ├── schemas/
+│   │   ├── __init__.py
+│   │   ├── activity.py                     # ActivityCreate, ActivityResponse, ActivityUpdate
+│   │   └── report.py                       # EODReportResponse, EODReportUpdate, ReviewResult
+│   ├── repositories/
+│   │   ├── __init__.py
+│   │   ├── base.py                         # BaseRepository generic CRUD
+│   │   ├── activity_repo.py                # Activity-specific queries
+│   │   └── report_repo.py                  # Report-specific queries
 │   ├── services/
 │   │   ├── __init__.py
-│   │   ├── activity_service.py        # Activity business logic
-│   │   ├── report_service.py          # Report generation orchestration
-│   │   └── teams_poster.py            # Teams webhook integration
+│   │   ├── activity_service.py             # Activity business logic
+│   │   ├── report_service.py               # Report orchestration
+│   │   └── teams_service.py                # Teams webhook poster
+│   ├── api/
+│   │   ├── __init__.py
+│   │   ├── dependencies.py                 # Shared DI (get_settings, get_teams_poster)
+│   │   └── v1/
+│   │       ├── __init__.py
+│   │       ├── router.py                   # Aggregate v1 router
+│   │       └── endpoints/
+│   │           ├── __init__.py
+│   │           ├── activities.py           # Activity CRUD + HTMX form
+│   │           ├── reports.py              # Report generate/preview/post
+│   │           └── pages.py                # HTML page routes
+│   ├── agent/
+│   │   ├── __init__.py
+│   │   ├── graph.py                        # LangGraph state graph
+│   │   ├── nodes.py                        # Node functions (Gemini LLM)
+│   │   ├── state.py                        # EODState TypedDict
+│   │   ├── prompts.py                      # Prompt templates
+│   │   └── examples.json                   # Few-shot examples
 │   ├── templates/
-│   │   ├── base.html                  # Base layout
-│   │   ├── dashboard.html             # Activity logging + today's view
-│   │   ├── preview.html               # EOD preview + edit + post
-│   │   └── history.html               # Past reports
+│   │   ├── base.html
+│   │   ├── dashboard.html
+│   │   ├── preview.html
+│   │   └── history.html
 │   └── static/
 │       └── style.css
+├── docs/
+│   └── IMPLEMENTATION_GUIDE.md             # This file
 ├── .env
 ├── .env.example
 ├── .gitignore
@@ -85,7 +114,7 @@ internity/
 
 ## Step 0: Prerequisites
 
-### Install uv (if not already installed)
+### Install uv
 
 ```bash
 # Windows (PowerShell)
@@ -95,6 +124,13 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 pip install uv
 ```
 
+### Get a Google AI API Key
+
+1. Go to [aistudio.google.com](https://aistudio.google.com)
+2. Sign in with your Google account
+3. Click **"Get API Key"** → **"Create API key"**
+4. Copy the key — free, no credit card needed
+
 ### Set up Teams Webhook (one-time)
 
 1. Open Microsoft Teams → go to your target channel
@@ -102,19 +138,12 @@ pip install uv
 3. Search for **"Post to a channel when a webhook request is received"**
 4. Name it `EOD Report Webhook`, select your team and channel
 5. Click **Create** → copy the generated webhook URL
-6. Save this URL — you'll need it for `.env`
-
-### Get an Anthropic API Key
-
-1. Go to [console.anthropic.com](https://console.anthropic.com)
-2. Create an API key
-3. Save it — you'll need it for `.env`
 
 ---
 
 ## Step 1: Project Setup
 
-### Initialize the project with uv
+### Initialize with uv
 
 ```bash
 cd "c:\Users\Jansen Cruz\Desktop\Jansen\internity"
@@ -123,58 +152,65 @@ cd "c:\Users\Jansen Cruz\Desktop\Jansen\internity"
 uv init --no-readme
 
 # Add all dependencies
-uv add langchain-anthropic langchain-core langgraph
+uv add langchain-google-genai langchain-core langgraph
 uv add fastapi uvicorn jinja2 python-multipart
 uv add typer rich
-uv add sqlalchemy
-uv add httpx
+uv add sqlalchemy httpx
 uv add python-dotenv pydantic pydantic-settings
 uv add apscheduler
 ```
 
-### Create the folder structure
+### Create folder structure
 
 ```bash
-# Create all directories
-mkdir -p eod_reporter/agent
-mkdir -p eod_reporter/routers
-mkdir -p eod_reporter/services
-mkdir -p eod_reporter/templates
-mkdir -p eod_reporter/static
+mkdir -p app/core
+mkdir -p app/models
+mkdir -p app/schemas
+mkdir -p app/repositories
+mkdir -p app/services
+mkdir -p app/api/v1/endpoints
+mkdir -p app/agent
+mkdir -p app/templates
+mkdir -p app/static
 
-# Create all __init__.py files
-touch eod_reporter/__init__.py
-touch eod_reporter/agent/__init__.py
-touch eod_reporter/routers/__init__.py
-touch eod_reporter/services/__init__.py
+# Create __init__.py files
+touch app/__init__.py
+touch app/core/__init__.py
+touch app/models/__init__.py
+touch app/schemas/__init__.py
+touch app/repositories/__init__.py
+touch app/services/__init__.py
+touch app/api/__init__.py
+touch app/api/v1/__init__.py
+touch app/api/v1/endpoints/__init__.py
+touch app/agent/__init__.py
 ```
 
 ### Create `.env.example`
 
 ```ini
-# .env.example — Copy this to .env and fill in your values
+# .env.example — Copy to .env and fill in your values
 
-ANTHROPIC_API_KEY=sk-ant-xxxxx
+GOOGLE_API_KEY=your-api-key-from-aistudio.google.com
 TEAMS_WEBHOOK_URL=https://xxxxx.webhook.office.com/webhookb2/xxxxx
 EOD_SCHEDULE_TIME=17:00
-MODEL_NAME=claude-sonnet-4-6
+MODEL_NAME=gemini-2.5-flash
 ```
 
 ### Create `.env`
 
 ```ini
-# .env — Fill in your actual values
+# .env — Your actual values
 
-ANTHROPIC_API_KEY=your-actual-api-key-here
-TEAMS_WEBHOOK_URL=your-actual-webhook-url-here
+GOOGLE_API_KEY=your-actual-api-key
+TEAMS_WEBHOOK_URL=your-actual-webhook-url
 EOD_SCHEDULE_TIME=17:00
-MODEL_NAME=claude-sonnet-4-6
+MODEL_NAME=gemini-2.5-flash
 ```
 
 ### Create `.gitignore`
 
 ```gitignore
-# .gitignore
 .env
 __pycache__/
 *.pyc
@@ -182,21 +218,56 @@ __pycache__/
 .venv/
 ```
 
+### Update `pyproject.toml`
+
+Add this section to your `pyproject.toml` (uv init creates the file, you just add the scripts section):
+
+```toml
+[project.scripts]
+eod = "app.cli:app"
+```
+
 ---
 
-## Step 2: Database Layer
+## Step 2: Core Layer
 
-### `eod_reporter/database.py`
+### `app/core/config.py`
+
+```python
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    GOOGLE_API_KEY: str
+    TEAMS_WEBHOOK_URL: str
+    EOD_SCHEDULE_TIME: str = "17:00"
+    MODEL_NAME: str = "gemini-2.5-flash"
+    DATABASE_URL: str = "sqlite:///eod_reporter.db"
+
+    class Config:
+        env_file = ".env"
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    return Settings()
+```
+
+### `app/core/database.py`
 
 ```python
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from pathlib import Path
 
-DATABASE_PATH = Path(__file__).parent.parent / "eod_reporter.db"
-DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
+from app.core.config import get_settings
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
+engine = create_engine(
+    get_settings().DATABASE_URL,
+    connect_args={"check_same_thread": False},
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -218,39 +289,27 @@ def init_db():
     Base.metadata.create_all(bind=engine)
 ```
 
-### `eod_reporter/models.py`
+---
+
+## Step 3: Models + Schemas
+
+### `app/models/activity.py`
 
 ```python
 from datetime import date, datetime
 from enum import Enum as PyEnum
-from typing import Optional
 
-from pydantic import BaseModel, Field
-from sqlalchemy import Column, Integer, String, Text, DateTime, Date, Enum
+from sqlalchemy import Column, Integer, Text, DateTime, Date, Enum
 from sqlalchemy.sql import func
 
-from eod_reporter.database import Base
+from app.core.database import Base
 
-
-# ──────────────────────────────────────────────
-# Enums
-# ──────────────────────────────────────────────
 
 class TimePeriod(str, PyEnum):
     MORNING = "morning"
     AFTERNOON = "afternoon"
     EVENING = "evening"
 
-
-class ReportStatus(str, PyEnum):
-    DRAFT = "draft"
-    CONFIRMED = "confirmed"
-    POSTED = "posted"
-
-
-# ──────────────────────────────────────────────
-# SQLAlchemy Models (Database Tables)
-# ──────────────────────────────────────────────
 
 class Activity(Base):
     __tablename__ = "activities"
@@ -264,7 +323,7 @@ class Activity(Base):
 
     @staticmethod
     def compute_time_period(dt: datetime) -> TimePeriod:
-        """Auto-categorize based on hour: morning < 12, afternoon 12-17, evening >= 17."""
+        """Auto-categorize: morning < 12, afternoon 12-17, evening >= 17."""
         hour = dt.hour
         if hour < 12:
             return TimePeriod.MORNING
@@ -275,8 +334,25 @@ class Activity(Base):
 
     @property
     def effective_time_period(self) -> TimePeriod:
-        """Return override if set, otherwise the auto-computed period."""
+        """Return override if set, otherwise auto-computed period."""
         return self.time_period_override or self.time_period
+```
+
+### `app/models/report.py`
+
+```python
+from enum import Enum as PyEnum
+
+from sqlalchemy import Column, Integer, Text, DateTime, Date, Enum
+from sqlalchemy.sql import func
+
+from app.core.database import Base
+
+
+class ReportStatus(str, PyEnum):
+    DRAFT = "draft"
+    CONFIRMED = "confirmed"
+    POSTED = "posted"
 
 
 class EODReport(Base):
@@ -288,11 +364,18 @@ class EODReport(Base):
     status = Column(Enum(ReportStatus), default=ReportStatus.DRAFT, nullable=False)
     generated_at = Column(DateTime, default=func.now(), nullable=False)
     posted_at = Column(DateTime, nullable=True)
+```
 
+### `app/schemas/activity.py`
 
-# ──────────────────────────────────────────────
-# Pydantic Schemas (API Request/Response)
-# ──────────────────────────────────────────────
+```python
+from datetime import date, datetime
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+from app.models.activity import TimePeriod
+
 
 class ActivityCreate(BaseModel):
     content: str = Field(..., min_length=1, description="What you did")
@@ -317,6 +400,17 @@ class ActivityResponse(BaseModel):
 class ActivityUpdate(BaseModel):
     content: Optional[str] = None
     time_period_override: Optional[TimePeriod] = None
+```
+
+### `app/schemas/report.py`
+
+```python
+from datetime import date, datetime
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+from app.models.report import ReportStatus
 
 
 class EODReportResponse(BaseModel):
@@ -333,13 +427,83 @@ class EODReportResponse(BaseModel):
 
 class EODReportUpdate(BaseModel):
     narrative: str
+
+
+class ReviewResult(BaseModel):
+    """Structured output from the LangGraph self-review node."""
+    approved: bool = Field(description="Whether the draft meets all quality criteria")
+    feedback: str = Field(description="Specific feedback if not approved, or 'Looks good' if approved")
 ```
 
 ---
 
-## Step 3: Services Layer
+## Step 4: Repositories
 
-### `eod_reporter/services/activity_service.py`
+### `app/repositories/base.py`
+
+```python
+from typing import Generic, TypeVar, Type, Optional
+
+from sqlalchemy.orm import Session
+
+ModelType = TypeVar("ModelType")
+
+
+class BaseRepository(Generic[ModelType]):
+    def __init__(self, model: Type[ModelType]):
+        self.model = model
+
+    def get(self, db: Session, id: int) -> Optional[ModelType]:
+        return db.query(self.model).filter(self.model.id == id).first()
+
+    def get_multi(self, db: Session, skip: int = 0, limit: int = 100) -> list[ModelType]:
+        return db.query(self.model).offset(skip).limit(limit).all()
+
+    def delete(self, db: Session, id: int) -> bool:
+        obj = self.get(db, id)
+        if obj:
+            db.delete(obj)
+            db.commit()
+            return True
+        return False
+```
+
+### `app/repositories/activity_repo.py`
+
+```python
+from datetime import date
+
+from sqlalchemy.orm import Session
+
+from app.models.activity import Activity
+from app.repositories.base import BaseRepository
+
+
+class ActivityRepository(BaseRepository[Activity]):
+    def __init__(self):
+        super().__init__(Activity)
+
+    def get_by_date(self, db: Session, target_date: date) -> list[Activity]:
+        return (
+            db.query(Activity)
+            .filter(Activity.date == target_date)
+            .order_by(Activity.logged_at)
+            .all()
+        )
+
+    def get_grouped_by_period(self, db: Session, target_date: date) -> dict[str, list[Activity]]:
+        activities = self.get_by_date(db, target_date)
+        grouped = {"morning": [], "afternoon": [], "evening": []}
+        for a in activities:
+            period = a.effective_time_period.value
+            grouped[period].append(a)
+        return grouped
+
+
+activity_repo = ActivityRepository()
+```
+
+### `app/repositories/report_repo.py`
 
 ```python
 from datetime import date, datetime
@@ -347,79 +511,169 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from eod_reporter.models import Activity, TimePeriod, ActivityCreate
+from app.models.report import EODReport, ReportStatus
+from app.repositories.base import BaseRepository
 
 
-def log_activity(
-    db: Session,
-    content: str,
-    time_period_override: Optional[TimePeriod] = None,
-) -> Activity:
-    """Log a new activity with auto-computed time period."""
-    now = datetime.now()
-    activity = Activity(
-        content=content,
-        logged_at=now,
-        date=now.date(),
-        time_period=Activity.compute_time_period(now),
-        time_period_override=time_period_override,
-    )
-    db.add(activity)
-    db.commit()
-    db.refresh(activity)
-    return activity
+class ReportRepository(BaseRepository[EODReport]):
+    def __init__(self):
+        super().__init__(EODReport)
+
+    def get_by_date(self, db: Session, target_date: date) -> Optional[EODReport]:
+        return db.query(EODReport).filter(EODReport.date == target_date).first()
+
+    def save_or_update(self, db: Session, target_date: date, narrative: str) -> EODReport:
+        report = self.get_by_date(db, target_date)
+        if report:
+            report.narrative = narrative
+            report.status = ReportStatus.DRAFT
+            report.generated_at = datetime.now()
+        else:
+            report = EODReport(
+                date=target_date,
+                narrative=narrative,
+                status=ReportStatus.DRAFT,
+            )
+            db.add(report)
+        db.commit()
+        db.refresh(report)
+        return report
+
+    def update_narrative(self, db: Session, report_id: int, narrative: str) -> Optional[EODReport]:
+        report = self.get(db, report_id)
+        if not report:
+            return None
+        report.narrative = narrative
+        db.commit()
+        db.refresh(report)
+        return report
+
+    def mark_posted(self, db: Session, report_id: int) -> Optional[EODReport]:
+        report = self.get(db, report_id)
+        if not report:
+            return None
+        report.status = ReportStatus.POSTED
+        report.posted_at = datetime.now()
+        db.commit()
+        db.refresh(report)
+        return report
+
+    def get_history(self, db: Session, limit: int = 30) -> list[EODReport]:
+        return (
+            db.query(EODReport)
+            .order_by(EODReport.date.desc())
+            .limit(limit)
+            .all()
+        )
 
 
-def get_activities_by_date(db: Session, target_date: date) -> list[Activity]:
-    """Get all activities for a given date, ordered by time."""
-    return (
-        db.query(Activity)
-        .filter(Activity.date == target_date)
-        .order_by(Activity.logged_at)
-        .all()
-    )
-
-
-def get_activities_grouped(db: Session, target_date: date) -> dict[str, list[Activity]]:
-    """Get activities grouped by effective time period."""
-    activities = get_activities_by_date(db, target_date)
-    grouped = {"morning": [], "afternoon": [], "evening": []}
-    for a in activities:
-        period = a.effective_time_period.value
-        grouped[period].append(a)
-    return grouped
-
-
-def update_activity(db: Session, activity_id: int, **kwargs) -> Optional[Activity]:
-    """Update an activity's content or time period override."""
-    activity = db.query(Activity).filter(Activity.id == activity_id).first()
-    if not activity:
-        return None
-    for key, value in kwargs.items():
-        if value is not None:
-            setattr(activity, key, value)
-    db.commit()
-    db.refresh(activity)
-    return activity
-
-
-def delete_activity(db: Session, activity_id: int) -> bool:
-    """Delete an activity. Returns True if deleted."""
-    activity = db.query(Activity).filter(Activity.id == activity_id).first()
-    if not activity:
-        return False
-    db.delete(activity)
-    db.commit()
-    return True
+report_repo = ReportRepository()
 ```
 
-### `eod_reporter/services/teams_poster.py`
+---
+
+## Step 5: Services
+
+### `app/services/activity_service.py`
+
+```python
+from datetime import date, datetime
+from typing import Optional
+
+from sqlalchemy.orm import Session
+
+from app.models.activity import Activity, TimePeriod
+from app.repositories.activity_repo import activity_repo
+
+
+class ActivityService:
+    def __init__(self):
+        self.repo = activity_repo
+
+    def log_activity(
+        self,
+        db: Session,
+        content: str,
+        time_period_override: Optional[TimePeriod] = None,
+    ) -> Activity:
+        now = datetime.now()
+        activity = Activity(
+            content=content,
+            logged_at=now,
+            date=now.date(),
+            time_period=Activity.compute_time_period(now),
+            time_period_override=time_period_override,
+        )
+        db.add(activity)
+        db.commit()
+        db.refresh(activity)
+        return activity
+
+    def get_by_date(self, db: Session, target_date: date) -> list[Activity]:
+        return self.repo.get_by_date(db, target_date)
+
+    def get_grouped(self, db: Session, target_date: date) -> dict[str, list[Activity]]:
+        return self.repo.get_grouped_by_period(db, target_date)
+
+    def update(self, db: Session, activity_id: int, **kwargs) -> Optional[Activity]:
+        activity = self.repo.get(db, activity_id)
+        if not activity:
+            return None
+        for key, value in kwargs.items():
+            if value is not None:
+                setattr(activity, key, value)
+        db.commit()
+        db.refresh(activity)
+        return activity
+
+    def delete(self, db: Session, activity_id: int) -> bool:
+        return self.repo.delete(db, activity_id)
+
+
+activity_service = ActivityService()
+```
+
+### `app/services/report_service.py`
+
+```python
+from datetime import date
+from typing import Optional
+
+from sqlalchemy.orm import Session
+
+from app.models.report import EODReport
+from app.repositories.report_repo import report_repo
+
+
+class ReportService:
+    def __init__(self):
+        self.repo = report_repo
+
+    def get_by_date(self, db: Session, target_date: date) -> Optional[EODReport]:
+        return self.repo.get_by_date(db, target_date)
+
+    def save(self, db: Session, target_date: date, narrative: str) -> EODReport:
+        return self.repo.save_or_update(db, target_date, narrative)
+
+    def update_narrative(self, db: Session, report_id: int, narrative: str) -> Optional[EODReport]:
+        return self.repo.update_narrative(db, report_id, narrative)
+
+    def mark_posted(self, db: Session, report_id: int) -> Optional[EODReport]:
+        return self.repo.mark_posted(db, report_id)
+
+    def get_history(self, db: Session, limit: int = 30) -> list[EODReport]:
+        return self.repo.get_history(db, limit)
+
+
+report_service = ReportService()
+```
+
+### `app/services/teams_service.py`
 
 ```python
 import httpx
-from datetime import date
 
-from eod_reporter.models import EODReport
+from app.models.report import EODReport
 
 
 class TeamsPoster:
@@ -427,7 +681,7 @@ class TeamsPoster:
         self.webhook_url = webhook_url
 
     def post(self, report: EODReport) -> bool:
-        """Post an EOD report to Teams via Workflows webhook as an Adaptive Card."""
+        """Post an EOD report to Teams as an Adaptive Card."""
         payload = {
             "type": "message",
             "attachments": [
@@ -441,7 +695,7 @@ class TeamsPoster:
                         "body": [
                             {
                                 "type": "TextBlock",
-                                "text": report.date.strftime("%B %-d, %Y"),
+                                "text": report.date.strftime("%B %#d, %Y"),
                                 "weight": "Bolder",
                                 "size": "Medium",
                             },
@@ -462,7 +716,7 @@ class TeamsPoster:
 
     def test_connection(self) -> bool:
         """Send a test message to verify the webhook works."""
-        test_payload = {
+        payload = {
             "type": "message",
             "attachments": [
                 {
@@ -475,12 +729,12 @@ class TeamsPoster:
                         "body": [
                             {
                                 "type": "TextBlock",
-                                "text": "EOD Reporter — Connection Test",
+                                "text": "EOD Reporter - Connection Test",
                                 "weight": "Bolder",
                             },
                             {
                                 "type": "TextBlock",
-                                "text": "If you see this message, the webhook is working correctly.",
+                                "text": "Webhook is working correctly.",
                                 "wrap": True,
                             },
                         ],
@@ -489,86 +743,18 @@ class TeamsPoster:
             ],
         }
         try:
-            response = httpx.post(self.webhook_url, json=test_payload, timeout=30)
+            response = httpx.post(self.webhook_url, json=payload, timeout=30)
             response.raise_for_status()
             return True
         except Exception:
             return False
 ```
 
-### `eod_reporter/services/report_service.py`
-
-```python
-from datetime import date, datetime
-from typing import Optional
-
-from sqlalchemy.orm import Session
-
-from eod_reporter.models import EODReport, ReportStatus
-
-
-def get_report_by_date(db: Session, target_date: date) -> Optional[EODReport]:
-    """Get an EOD report for a specific date."""
-    return db.query(EODReport).filter(EODReport.date == target_date).first()
-
-
-def save_report(db: Session, target_date: date, narrative: str) -> EODReport:
-    """Save or update an EOD report draft."""
-    report = get_report_by_date(db, target_date)
-    if report:
-        report.narrative = narrative
-        report.status = ReportStatus.DRAFT
-        report.generated_at = datetime.now()
-    else:
-        report = EODReport(
-            date=target_date,
-            narrative=narrative,
-            status=ReportStatus.DRAFT,
-        )
-        db.add(report)
-    db.commit()
-    db.refresh(report)
-    return report
-
-
-def update_report_narrative(db: Session, report_id: int, narrative: str) -> Optional[EODReport]:
-    """Update the narrative of an existing report."""
-    report = db.query(EODReport).filter(EODReport.id == report_id).first()
-    if not report:
-        return None
-    report.narrative = narrative
-    db.commit()
-    db.refresh(report)
-    return report
-
-
-def mark_posted(db: Session, report_id: int) -> Optional[EODReport]:
-    """Mark a report as posted."""
-    report = db.query(EODReport).filter(EODReport.id == report_id).first()
-    if not report:
-        return None
-    report.status = ReportStatus.POSTED
-    report.posted_at = datetime.now()
-    db.commit()
-    db.refresh(report)
-    return report
-
-
-def get_report_history(db: Session, limit: int = 30) -> list[EODReport]:
-    """Get recent EOD reports."""
-    return (
-        db.query(EODReport)
-        .order_by(EODReport.date.desc())
-        .limit(limit)
-        .all()
-    )
-```
-
 ---
 
-## Step 4: LangGraph Agent
+## Step 6: LangGraph Agent
 
-### `eod_reporter/agent/state.py`
+### `app/agent/state.py`
 
 ```python
 from typing import TypedDict
@@ -576,38 +762,68 @@ from typing import TypedDict
 
 class EODState(TypedDict):
     date: str                          # "2026-03-11"
-    activities: list[dict]             # [{"content": "...", "time": "09:30", "period": "morning"}, ...]
+    activities: list[dict]             # [{"content": "...", "time": "09:30", "period": "morning"}]
     grouped_activities: dict           # {"morning": [...], "afternoon": [...], "evening": [...]}
     draft: str                         # Current narrative draft
     review_feedback: str               # Feedback from self-review
     review_approved: bool              # Whether the review passed
-    revision_count: int                # Number of revisions so far (cap at 2)
+    revision_count: int                # Number of revisions (cap at 2)
     final_narrative: str               # Approved narrative
 ```
 
-### `eod_reporter/agent/prompts.py`
+### `app/agent/examples.json`
+
+```json
+[
+    {
+        "input": "Morning:\n- Weekly huddle meeting\n- Team huddle for Project 2 - discussed and delegated tasks\nAfternoon:\n- Tested workflow - monitored agent responses to different emails\n- Flagged notable responses to report back to team\n- Daily check-in with David and Matt for project updates\n- Developed FastAPI-based replacement for CloudConvert service (PDF to images)\n- Deployed it to Azure for use in n8n workflow",
+        "output": "The day started with the weekly huddle followed by a team huddle for Project 2 where we discussed and delegated tasks for the day. From there, I moved into testing the workflow, monitoring how the agent responded to different emails, and flagging notable responses to report back to the team. We also had our daily check-in with David and Matt to catch up on project updates and stay aligned. Later in the day, I developed a FastAPI-based replacement for the temporary CloudConvert service that converts PDFs to images, and deployed it to Azure so it can be used directly in the n8n workflow."
+    },
+    {
+        "input": "Morning:\n- Tried to automate the testing process - repetitive and time-consuming\n- Some configs need editing directly in n8n, making full automation hard\n- Connected Claude, Claude Code, and MCP into n8n workflow\nAfternoon:\n- Couldn't get automation working after a few hours\n- Shifted back to manual testing\n- Results mostly okay but some responses need improvement\n- Tested different scenarios and flagged areas for improvement",
+        "output": "I started the morning by trying to automate the testing process since it's repetitive and time-consuming. However, some configurations need to be edited directly inside n8n, which made full automation quite challenging. I also connected and integrated Claude, Claude Code, and MCP into the n8n workflow on my machine to have Claude AI assist with the workflow. After spending a few hours on it, I wasn't able to get the automation working, so I shifted back to testing the agent manually. The results were mostly okay, but some responses still need improvement. The rest of the day was spent testing across different scenarios and flagging areas where the agent can do better so we can make those adjustments later."
+    },
+    {
+        "input": "Morning:\n- Group huddle - went over yesterday's progress, delegated tasks\n- Assigned to test workflow: bookings, connote lookups, quotation requests\nAfternoon:\n- Agent handled all test cases well\n- Made adjustments to make workflow more stable\n- Christian provided Claude plan\n- Explored Claude capabilities for our workflow\nEvening:\n- Testing and logging agent responses\n- Compiled everything into Excel sheet for tracking",
+        "output": "We started off the morning with a group huddle to go over yesterday's progress and delegate tasks for the day. I was assigned to test the workflow focusing on bookings, connote lookups, and quotation requests \u2014 and the agent handled all of them well. Throughout the day, we also made a lot of adjustments that made the workflow more stable across various cases. Later, Christian provided us with a Claude plan, so I took the opportunity to explore Claude's capabilities and how it could be used in our workflow. I wrapped up the day by testing and logging the agents' responses and compiling everything into an Excel sheet for tracking and review."
+    }
+]
+```
+
+### `app/agent/prompts.py`
 
 ```python
+import json
+from pathlib import Path
+
 from langchain_core.prompts import ChatPromptTemplate
 
 # ──────────────────────────────────────────────
-# System Prompt — Defines the writing style
+# System Prompt — [Role]+[Expertise]+[Guidelines]+[Output Format]+[Constraints]
+# (from prompt-engineering-patterns skill)
 # ──────────────────────────────────────────────
 
 EOD_SYSTEM_PROMPT = """\
-You are a professional report writer who transforms daily activity notes \
-into polished, narrative-style End of Day (EOD) reports.
+[Role]
+You are a professional report writer specializing in End of Day (EOD) reports \
+for software development teams.
 
-Your writing style:
-- Narrative paragraph format (NOT bullet points)
-- Chronological flow through the day
-- Professional but conversational tone
-- Mentions meetings, tasks worked on, challenges, and outcomes naturally
+[Expertise]
+Your expertise is transforming raw daily activity notes into polished, \
+narrative-style summaries that read naturally and professionally.
+
+[Guidelines]
+- Write in narrative paragraph format with chronological flow through the day
+- Use a professional but conversational tone
+- Mention meetings, tasks, challenges, and outcomes naturally
+- Use transitions like "From there," "Later in the day," "After that"
+- Start with how the day began and flow naturally through activities
+
+[Output Format]
 - 1-2 paragraphs, approximately 100-200 words
-- Starts with how the day began and flows naturally through activities
-- Uses transitions like "From there," "Later in the day," "After that," "The rest of the day"
+- Plain text only, no markdown formatting
 
-Constraints:
+[Constraints]
 - Do NOT use bullet points, numbered lists, or markdown formatting
 - Do NOT add a greeting, sign-off, or date header
 - Do NOT fabricate details not present in the input
@@ -615,162 +831,86 @@ Constraints:
 - Keep it concise — no filler sentences"""
 
 # ──────────────────────────────────────────────
-# Few-Shot Examples — Real EODs for style reference
-# ──────────────────────────────────────────────
-
-FEW_SHOT_EXAMPLES = [
-    {
-        "input": (
-            "Morning:\n"
-            "- Weekly huddle meeting\n"
-            "- Team huddle for Project 2 - discussed and delegated tasks\n"
-            "Afternoon:\n"
-            "- Tested workflow - monitored agent responses to different emails\n"
-            "- Flagged notable responses to report back to team\n"
-            "- Daily check-in with David and Matt for project updates\n"
-            "- Developed FastAPI-based replacement for CloudConvert service (PDF to images)\n"
-            "- Deployed it to Azure for use in n8n workflow"
-        ),
-        "output": (
-            "The day started with the weekly huddle followed by a team huddle for "
-            "Project 2 where we discussed and delegated tasks for the day. From there, "
-            "I moved into testing the workflow, monitoring how the agent responded to "
-            "different emails, and flagging notable responses to report back to the team. "
-            "We also had our daily check-in with David and Matt to catch up on project "
-            "updates and stay aligned. Later in the day, I developed a FastAPI-based "
-            "replacement for the temporary CloudConvert service that converts PDFs to "
-            "images, and deployed it to Azure so it can be used directly in the n8n workflow."
-        ),
-    },
-    {
-        "input": (
-            "Morning:\n"
-            "- Tried to automate the testing process - repetitive and time-consuming\n"
-            "- Some configs need editing directly in n8n, making full automation hard\n"
-            "- Connected Claude, Claude Code, and MCP into n8n workflow\n"
-            "Afternoon:\n"
-            "- Couldn't get automation working after a few hours\n"
-            "- Shifted back to manual testing\n"
-            "- Results mostly okay but some responses need improvement\n"
-            "- Tested different scenarios and flagged areas for improvement"
-        ),
-        "output": (
-            "I started the morning by trying to automate the testing process since it's "
-            "repetitive and time-consuming. However, some configurations need to be edited "
-            "directly inside n8n, which made full automation quite challenging. I also "
-            "connected and integrated Claude, Claude Code, and MCP into the n8n workflow "
-            "on my machine to have Claude AI assist with the workflow. After spending a "
-            "few hours on it, I wasn't able to get the automation working, so I shifted "
-            "back to testing the agent manually. The results were mostly okay, but some "
-            "responses still need improvement. The rest of the day was spent testing across "
-            "different scenarios and flagging areas where the agent can do better so we "
-            "can make those adjustments later."
-        ),
-    },
-    {
-        "input": (
-            "Morning:\n"
-            "- Group huddle - went over yesterday's progress, delegated tasks\n"
-            "- Assigned to test workflow: bookings, connote lookups, quotation requests\n"
-            "Afternoon:\n"
-            "- Agent handled all test cases well\n"
-            "- Made adjustments to make workflow more stable\n"
-            "- Christian provided Claude plan\n"
-            "- Explored Claude capabilities for our workflow\n"
-            "Evening:\n"
-            "- Testing and logging agent responses\n"
-            "- Compiled everything into Excel sheet for tracking"
-        ),
-        "output": (
-            "We started off the morning with a group huddle to go over yesterday's "
-            "progress and delegate tasks for the day. I was assigned to test the workflow "
-            "focusing on bookings, connote lookups, and quotation requests — and the agent "
-            "handled all of them well. Throughout the day, we also made a lot of adjustments "
-            "that made the workflow more stable across various cases. Later, Christian "
-            "provided us with a Claude plan, so I took the opportunity to explore Claude's "
-            "capabilities and how it could be used in our workflow. I wrapped up the day by "
-            "testing and logging the agents' responses and compiling everything into an "
-            "Excel sheet for tracking and review."
-        ),
-    },
-]
-
-# ──────────────────────────────────────────────
-# Generation Prompt
-# ──────────────────────────────────────────────
-
-GENERATE_PROMPT = ChatPromptTemplate.from_messages(
-    [
-        ("system", EOD_SYSTEM_PROMPT),
-        (
-            "human",
-            "Here are example EOD reports for reference on tone and style:\n\n"
-            "{few_shot_examples}\n\n"
-            "---\n\n"
-            "Now transform these activity notes into a narrative EOD report:\n\n"
-            "{activities_text}\n\n"
-            "Write the EOD report narrative:",
-        ),
-    ]
-)
-
-# ──────────────────────────────────────────────
-# Self-Review Prompt
+# Review Prompt — Chain-of-Thought with Self-Verification
+# (from prompt-engineering-patterns skill)
 # ──────────────────────────────────────────────
 
 REVIEW_SYSTEM_PROMPT = """\
-You are a quality reviewer for End of Day (EOD) reports. You check whether a \
-generated report meets the required style and quality standards.
+[Role]
+You are a quality reviewer for End of Day (EOD) reports.
 
-Review criteria:
-1. NARRATIVE FORMAT: Must be paragraph form. Reject if it uses bullet points or numbered lists.
-2. CHRONOLOGICAL FLOW: Should follow the order of the day (morning → afternoon → evening).
-3. TONE: Professional but conversational. Not too formal, not too casual.
-4. ACCURACY: Must only mention activities from the input. No fabricated details.
-5. LENGTH: Should be 1-2 paragraphs, approximately 80-250 words.
-6. TRANSITIONS: Should use natural transitions between activities.
+[Expertise]
+You evaluate whether generated reports meet specific style and quality standards.
 
-Respond in this exact format:
-APPROVED: yes/no
-FEEDBACK: <specific feedback if not approved, or "Looks good" if approved>"""
+[Guidelines]
+Review the draft step by step against each criterion:
 
-REVIEW_PROMPT = ChatPromptTemplate.from_messages(
-    [
-        ("system", REVIEW_SYSTEM_PROMPT),
-        (
-            "human",
-            "Original activity notes:\n{activities_text}\n\n"
-            "Generated EOD report:\n{draft}\n\n"
-            "Review this report against the criteria:",
-        ),
-    ]
-)
+Step 1 - NARRATIVE FORMAT: Is it paragraph form? Any bullet points or numbered lists?
+Step 2 - CHRONOLOGICAL FLOW: Does it follow morning to afternoon to evening order?
+Step 3 - TONE: Professional but conversational? Not too formal, not too casual?
+Step 4 - ACCURACY: Does it only mention activities from the input? Any fabricated details?
+Step 5 - LENGTH: Is it 1-2 paragraphs, approximately 80-250 words?
+Step 6 - TRANSITIONS: Does it use natural transitions between activities?
+
+After evaluating all steps, decide whether to approve.
+
+[Constraints]
+- Only reject if a criterion is clearly violated
+- Provide specific, actionable feedback when rejecting"""
 
 # ──────────────────────────────────────────────
-# Revision Prompt (used when self-review rejects)
+# Prompt Templates
 # ──────────────────────────────────────────────
 
-REVISE_PROMPT = ChatPromptTemplate.from_messages(
-    [
-        ("system", EOD_SYSTEM_PROMPT),
-        (
-            "human",
-            "Here are example EOD reports for reference:\n\n"
-            "{few_shot_examples}\n\n"
-            "---\n\n"
-            "Activity notes:\n{activities_text}\n\n"
-            "Previous draft:\n{draft}\n\n"
-            "Reviewer feedback:\n{feedback}\n\n"
-            "Please revise the EOD report based on the feedback:",
-        ),
-    ]
-)
+GENERATE_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", EOD_SYSTEM_PROMPT),
+    ("human",
+     "Here are example EOD reports for reference on tone and style:\n\n"
+     "{few_shot_examples}\n\n"
+     "---\n\n"
+     "Now transform these activity notes into a narrative EOD report:\n\n"
+     "{activities_text}\n\n"
+     "Write the EOD report narrative:"),
+])
+
+REVIEW_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", REVIEW_SYSTEM_PROMPT),
+    ("human",
+     "Original activity notes:\n{activities_text}\n\n"
+     "Generated EOD report:\n{draft}\n\n"
+     "Review this report against the criteria:"),
+])
+
+REVISE_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", EOD_SYSTEM_PROMPT),
+    ("human",
+     "Here are example EOD reports for reference:\n\n"
+     "{few_shot_examples}\n\n"
+     "---\n\n"
+     "Activity notes:\n{activities_text}\n\n"
+     "Previous draft:\n{draft}\n\n"
+     "Reviewer feedback:\n{feedback}\n\n"
+     "Please revise the EOD report based on the feedback:"),
+])
+
+
+# ──────────────────────────────────────────────
+# Few-Shot Examples (loaded from examples.json)
+# ──────────────────────────────────────────────
+
+_EXAMPLES_PATH = Path(__file__).parent / "examples.json"
+
+
+def load_few_shot_examples() -> list[dict]:
+    with open(_EXAMPLES_PATH, encoding="utf-8") as f:
+        return json.load(f)
 
 
 def format_few_shot_examples() -> str:
     """Format few-shot examples into a string for the prompt."""
+    examples = load_few_shot_examples()
     parts = []
-    for i, ex in enumerate(FEW_SHOT_EXAMPLES, 1):
+    for i, ex in enumerate(examples, 1):
         parts.append(f"Example {i}:\nInput:\n{ex['input']}\n\nOutput:\n{ex['output']}")
     return "\n\n---\n\n".join(parts)
 
@@ -789,33 +929,43 @@ def format_activities_for_prompt(grouped: dict) -> str:
     return "\n".join(lines)
 ```
 
-### `eod_reporter/agent/nodes.py`
+### `app/agent/nodes.py`
 
 ```python
 from datetime import date
 
-from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
 from sqlalchemy.orm import Session
 
-from eod_reporter.agent.state import EODState
-from eod_reporter.agent.prompts import (
+from app.agent.state import EODState
+from app.agent.prompts import (
     GENERATE_PROMPT,
     REVIEW_PROMPT,
     REVISE_PROMPT,
     format_few_shot_examples,
     format_activities_for_prompt,
 )
-from eod_reporter.database import SessionLocal
-from eod_reporter.services.activity_service import get_activities_grouped
+from app.core.config import get_settings
+from app.core.database import SessionLocal
+from app.schemas.report import ReviewResult
+from app.services.activity_service import activity_service
 
-# Initialize the LLM — model name can be overridden via config
-_llm: ChatAnthropic | None = None
+
+# ──────────────────────────────────────────────
+# LLM Initialization (Gemini)
+# ──────────────────────────────────────────────
+
+_llm: ChatGoogleGenerativeAI | None = None
 
 
-def get_llm(model: str = "claude-sonnet-4-6") -> ChatAnthropic:
+def get_llm() -> ChatGoogleGenerativeAI:
     global _llm
     if _llm is None:
-        _llm = ChatAnthropic(model=model, max_tokens=1024)
+        settings = get_settings()
+        _llm = ChatGoogleGenerativeAI(
+            model=settings.MODEL_NAME,
+            max_output_tokens=1024,
+        )
     return _llm
 
 
@@ -824,13 +974,11 @@ def get_llm(model: str = "claude-sonnet-4-6") -> ChatAnthropic:
 # ──────────────────────────────────────────────
 
 def fetch_activities(state: EODState) -> dict:
-    """Pull today's activities from SQLite and populate state."""
     target_date = date.fromisoformat(state["date"])
     db: Session = SessionLocal()
     try:
-        grouped = get_activities_grouped(db, target_date)
+        grouped = activity_service.get_grouped(db, target_date)
 
-        # Convert to serializable dicts
         activities_list = []
         grouped_dict = {}
         for period, items in grouped.items():
@@ -858,7 +1006,6 @@ def fetch_activities(state: EODState) -> dict:
 # ──────────────────────────────────────────────
 
 def generate_draft(state: EODState) -> dict:
-    """Generate a narrative EOD from the grouped activities."""
     llm = get_llm()
     chain = GENERATE_PROMPT | llm
 
@@ -874,41 +1021,42 @@ def generate_draft(state: EODState) -> dict:
 
 
 # ──────────────────────────────────────────────
-# Node: Self-review the draft
+# Node: Self-review (structured output)
 # ──────────────────────────────────────────────
 
 def self_review(state: EODState) -> dict:
-    """Review the draft for quality. Returns approval status and feedback."""
     llm = get_llm()
-    chain = REVIEW_PROMPT | llm
-
     activities_text = format_activities_for_prompt(state["grouped_activities"])
-    response = chain.invoke({
-        "activities_text": activities_text,
-        "draft": state["draft"],
-    })
 
-    review_text = response.content.strip()
+    try:
+        # Use structured output — eliminates fragile string parsing
+        structured_llm = llm.with_structured_output(ReviewResult)
+        chain = REVIEW_PROMPT | structured_llm
 
-    # Parse the review response
-    approved = "APPROVED: yes" in review_text.lower() or "approved: yes" in review_text
-    feedback = ""
-    if "FEEDBACK:" in review_text:
-        feedback = review_text.split("FEEDBACK:")[-1].strip()
+        result: ReviewResult = chain.invoke({
+            "activities_text": activities_text,
+            "draft": state["draft"],
+        })
 
-    return {
-        "review_feedback": feedback,
-        "review_approved": approved,
-        "revision_count": state.get("revision_count", 0) + (0 if approved else 1),
-    }
+        return {
+            "review_feedback": result.feedback,
+            "review_approved": result.approved,
+            "revision_count": state.get("revision_count", 0) + (0 if result.approved else 1),
+        }
+    except Exception:
+        # Fallback: accept the draft if structured output fails
+        return {
+            "review_feedback": "Review unavailable — accepting draft.",
+            "review_approved": True,
+            "revision_count": state.get("revision_count", 0),
+        }
 
 
 # ──────────────────────────────────────────────
-# Node: Revise the draft based on feedback
+# Node: Revise draft based on feedback
 # ──────────────────────────────────────────────
 
 def revise_draft(state: EODState) -> dict:
-    """Revise the draft based on review feedback."""
     llm = get_llm()
     chain = REVISE_PROMPT | llm
 
@@ -925,13 +1073,13 @@ def revise_draft(state: EODState) -> dict:
     return {"draft": response.content.strip()}
 ```
 
-### `eod_reporter/agent/graph.py`
+### `app/agent/graph.py`
 
 ```python
 from langgraph.graph import StateGraph, END
 
-from eod_reporter.agent.state import EODState
-from eod_reporter.agent.nodes import (
+from app.agent.state import EODState
+from app.agent.nodes import (
     fetch_activities,
     generate_draft,
     self_review,
@@ -940,22 +1088,20 @@ from eod_reporter.agent.nodes import (
 
 
 def should_revise(state: EODState) -> str:
-    """Conditional edge: decide whether to revise or finalize."""
+    """Conditional edge: revise or finalize."""
     if state.get("review_approved", False):
         return "finalize"
     if state.get("revision_count", 0) >= 2:
-        # Cap revisions at 2 — accept the draft as-is
         return "finalize"
     return "revise"
 
 
 def finalize(state: EODState) -> dict:
-    """Copy the approved draft to final_narrative."""
+    """Copy approved draft to final_narrative."""
     return {"final_narrative": state["draft"]}
 
 
 def build_eod_graph() -> StateGraph:
-    """Build and compile the LangGraph EOD generation graph."""
     graph = StateGraph(EODState)
 
     # Add nodes
@@ -970,7 +1116,7 @@ def build_eod_graph() -> StateGraph:
     graph.add_edge("fetch_activities", "generate_draft")
     graph.add_edge("generate_draft", "self_review")
 
-    # Conditional: review passes → finalize, fails → revise (with cap)
+    # Conditional: review passes → finalize, fails → revise (cap at 2)
     graph.add_conditional_edges(
         "self_review",
         should_revise,
@@ -979,7 +1125,7 @@ def build_eod_graph() -> StateGraph:
             "revise": "revise_draft",
         },
     )
-    graph.add_edge("revise_draft", "self_review")  # loop back after revision
+    graph.add_edge("revise_draft", "self_review")
     graph.add_edge("finalize", END)
 
     return graph.compile()
@@ -991,32 +1137,53 @@ eod_agent = build_eod_graph()
 
 ---
 
-## Step 5: API Routers
+## Step 7: API Layer
 
-### `eod_reporter/routers/activities.py`
+### `app/api/dependencies.py`
+
+```python
+from fastapi import Depends
+
+from app.core.config import Settings, get_settings
+from app.services.teams_service import TeamsPoster
+
+
+def get_teams_poster(settings: Settings = Depends(get_settings)) -> TeamsPoster:
+    return TeamsPoster(settings.TEAMS_WEBHOOK_URL)
+```
+
+### `app/api/v1/router.py`
+
+```python
+from fastapi import APIRouter
+
+from app.api.v1.endpoints import activities, reports, pages
+
+api_router = APIRouter()
+api_router.include_router(activities.router, prefix="/activities", tags=["activities"])
+api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
+api_router.include_router(pages.router, tags=["pages"])
+```
+
+### `app/api/v1/endpoints/activities.py`
 
 ```python
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from eod_reporter.database import get_db
-from eod_reporter.models import ActivityCreate, ActivityResponse, ActivityUpdate, TimePeriod
-from eod_reporter.services import activity_service
+from app.core.database import get_db
+from app.schemas.activity import ActivityCreate, ActivityResponse, ActivityUpdate
+from app.services.activity_service import activity_service
 
-router = APIRouter(prefix="/activities", tags=["activities"])
+router = APIRouter()
 
-
-# ──────────────────────────────────────────────
-# JSON API endpoints
-# ──────────────────────────────────────────────
 
 @router.post("/", response_model=ActivityResponse)
 def create_activity(payload: ActivityCreate, db: Session = Depends(get_db)):
-    """Log a new activity."""
     activity = activity_service.log_activity(
         db,
         content=payload.content,
@@ -1034,13 +1201,9 @@ def create_activity(payload: ActivityCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=list[ActivityResponse])
-def list_activities(
-    target_date: Optional[date] = None,
-    db: Session = Depends(get_db),
-):
-    """List activities for a date (defaults to today)."""
+def list_activities(target_date: Optional[date] = None, db: Session = Depends(get_db)):
     target = target_date or date.today()
-    activities = activity_service.get_activities_by_date(db, target)
+    activities = activity_service.get_by_date(db, target)
     return [
         ActivityResponse(
             id=a.id,
@@ -1061,9 +1224,8 @@ def update_activity(
     payload: ActivityUpdate,
     db: Session = Depends(get_db),
 ):
-    """Update an activity."""
     updates = payload.model_dump(exclude_none=True)
-    activity = activity_service.update_activity(db, activity_id, **updates)
+    activity = activity_service.update(db, activity_id, **updates)
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
     return ActivityResponse(
@@ -1079,63 +1241,46 @@ def update_activity(
 
 @router.delete("/{activity_id}")
 def delete_activity(activity_id: int, db: Session = Depends(get_db)):
-    """Delete an activity."""
-    if not activity_service.delete_activity(db, activity_id):
+    if not activity_service.delete(db, activity_id):
         raise HTTPException(status_code=404, detail="Activity not found")
     return {"ok": True}
 
 
-# ──────────────────────────────────────────────
-# HTMX form endpoint (used by the web dashboard)
-# ──────────────────────────────────────────────
-
 @router.post("/log")
-def log_from_form(
-    content: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    """Log activity from the web form (HTMX POST). Redirects back to dashboard."""
+def log_from_form(content: str = Form(...), db: Session = Depends(get_db)):
+    """HTMX form endpoint — logs activity and redirects to dashboard."""
     activity_service.log_activity(db, content=content)
     return RedirectResponse(url="/", status_code=303)
 ```
 
-### `eod_reporter/routers/reports.py`
+### `app/api/v1/endpoints/reports.py`
 
 ```python
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from eod_reporter.database import get_db
-from eod_reporter.models import EODReportResponse, EODReportUpdate, ReportStatus
-from eod_reporter.services import report_service, activity_service
-from eod_reporter.services.teams_poster import TeamsPoster
-from eod_reporter.agent.graph import eod_agent
+from app.core.database import get_db
+from app.api.dependencies import get_teams_poster
+from app.services.activity_service import activity_service
+from app.services.report_service import report_service
+from app.services.teams_service import TeamsPoster
+from app.agent.graph import eod_agent
 
-import os
-
-router = APIRouter(prefix="/reports", tags=["reports"])
-templates = Jinja2Templates(directory="eod_reporter/templates")
+router = APIRouter()
 
 
 @router.post("/generate")
-def generate_report(
-    target_date: Optional[date] = None,
-    db: Session = Depends(get_db),
-):
-    """Trigger the LangGraph agent to generate an EOD report."""
+def generate_report(target_date: Optional[date] = None, db: Session = Depends(get_db)):
     target = target_date or date.today()
 
-    # Check if there are activities
-    activities = activity_service.get_activities_by_date(db, target)
+    activities = activity_service.get_by_date(db, target)
     if not activities:
         raise HTTPException(status_code=400, detail="No activities logged for this date")
 
-    # Run the LangGraph agent
     result = eod_agent.invoke({
         "date": target.isoformat(),
         "activities": [],
@@ -1148,27 +1293,85 @@ def generate_report(
     })
 
     narrative = result.get("final_narrative", result.get("draft", ""))
+    report = report_service.save(db, target, narrative)
 
-    # Save to database
-    report = report_service.save_report(db, target, narrative)
-
-    return {
-        "id": report.id,
-        "date": report.date.isoformat(),
-        "narrative": report.narrative,
-        "status": report.status.value,
-    }
+    return RedirectResponse(url=f"/reports/preview?target_date={target}", status_code=303)
 
 
-@router.get("/preview", response_class=HTMLResponse)
+@router.post("/{report_id}/update")
+def update_narrative(
+    report_id: int,
+    narrative: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    report = report_service.update_narrative(db, report_id, narrative)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return RedirectResponse(url=f"/reports/preview?target_date={report.date}", status_code=303)
+
+
+@router.post("/{report_id}/post-to-teams")
+def post_to_teams(
+    report_id: int,
+    db: Session = Depends(get_db),
+    poster: TeamsPoster = Depends(get_teams_poster),
+):
+    report = report_service.repo.get(db, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    try:
+        poster.post(report)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to post to Teams: {e}")
+
+    report_service.mark_posted(db, report_id)
+    return RedirectResponse(url=f"/reports/preview?target_date={report.date}", status_code=303)
+```
+
+### `app/api/v1/endpoints/pages.py`
+
+```python
+from datetime import date
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.services.activity_service import activity_service
+from app.services.report_service import report_service
+
+router = APIRouter()
+templates = Jinja2Templates(directory="app/templates")
+
+
+@router.get("/", response_class=HTMLResponse)
+def dashboard(request: Request, db: Session = Depends(get_db)):
+    today = date.today()
+    grouped = activity_service.get_grouped(db, today)
+    all_activities = activity_service.get_by_date(db, today)
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "today": today,
+            "grouped_activities": grouped,
+            "has_activities": len(all_activities) > 0,
+        },
+    )
+
+
+@router.get("/reports/preview", response_class=HTMLResponse)
 def preview_report(
     request: Request,
     target_date: Optional[date] = None,
     db: Session = Depends(get_db),
 ):
-    """Show the preview page for an EOD report."""
     target = target_date or date.today()
-    report = report_service.get_report_by_date(db, target)
+    report = report_service.get_by_date(db, target)
     return templates.TemplateResponse(
         "preview.html",
         {
@@ -1179,47 +1382,9 @@ def preview_report(
     )
 
 
-@router.post("/{report_id}/update")
-def update_narrative(
-    report_id: int,
-    narrative: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    """Update the narrative (from the edit form)."""
-    report = report_service.update_report_narrative(db, report_id, narrative)
-    if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    return RedirectResponse(url=f"/reports/preview?target_date={report.date}", status_code=303)
-
-
-@router.post("/{report_id}/post-to-teams")
-def post_to_teams(
-    report_id: int,
-    db: Session = Depends(get_db),
-):
-    """Confirm and post the report to Teams."""
-    report = db.query(report_service.EODReport).filter_by(id=report_id).first()
-    if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-
-    webhook_url = os.getenv("TEAMS_WEBHOOK_URL")
-    if not webhook_url:
-        raise HTTPException(status_code=500, detail="TEAMS_WEBHOOK_URL not configured")
-
-    poster = TeamsPoster(webhook_url)
-    try:
-        poster.post(report)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Failed to post to Teams: {e}")
-
-    report_service.mark_posted(db, report_id)
-    return RedirectResponse(url=f"/reports/preview?target_date={report.date}", status_code=303)
-
-
-@router.get("/history", response_class=HTMLResponse)
+@router.get("/reports/history", response_class=HTMLResponse)
 def report_history(request: Request, db: Session = Depends(get_db)):
-    """Show past EOD reports."""
-    reports = report_service.get_report_history(db)
+    reports = report_service.get_history(db)
     return templates.TemplateResponse(
         "history.html",
         {"request": request, "reports": reports},
@@ -1228,9 +1393,9 @@ def report_history(request: Request, db: Session = Depends(get_db)):
 
 ---
 
-## Step 6: Web Templates
+## Step 8: Templates + Static
 
-### `eod_reporter/templates/base.html`
+### `app/templates/base.html`
 
 ```html
 <!DOCTYPE html>
@@ -1259,14 +1424,14 @@ def report_history(request: Request, db: Session = Depends(get_db)):
 </html>
 ```
 
-### `eod_reporter/templates/dashboard.html`
+### `app/templates/dashboard.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}Dashboard — EOD Reporter{% endblock %}
+{% block title %}Dashboard - EOD Reporter{% endblock %}
 
 {% block content %}
-<h1>{{ today.strftime("%B %-d, %Y") }}</h1>
+<h1>{{ today.strftime("%B %#d, %Y") }}</h1>
 
 <!-- Quick Log Form -->
 <section class="card">
@@ -1296,13 +1461,11 @@ def report_history(request: Request, db: Session = Depends(get_db)):
                 <span class="time-badge">{{ activity.logged_at.strftime("%H:%M") }}</span>
                 <span class="activity-content">{{ activity.content }}</span>
                 <div class="activity-actions">
-                    <form method="post" action="/activities/{{ activity.id }}"
-                          hx-delete="/activities/{{ activity.id }}"
-                          hx-target="closest .activity-item"
-                          hx-swap="outerHTML"
-                          hx-confirm="Delete this activity?">
-                        <button type="submit" class="btn-delete" title="Delete">✕</button>
-                    </form>
+                    <button class="btn-delete" title="Delete"
+                            hx-delete="/activities/{{ activity.id }}"
+                            hx-target="closest .activity-item"
+                            hx-swap="outerHTML"
+                            hx-confirm="Delete this activity?">x</button>
                 </div>
             </div>
             {% endfor %}
@@ -1316,7 +1479,7 @@ def report_history(request: Request, db: Session = Depends(get_db)):
 <!-- Generate EOD -->
 <section class="card">
     <h2>Generate EOD Report</h2>
-    <form method="post" action="/reports/generate" id="generate-form">
+    <form method="post" action="/reports/generate">
         <button type="submit" class="btn-primary" {% if not has_activities %}disabled{% endif %}>
             Generate Report
         </button>
@@ -1328,29 +1491,26 @@ def report_history(request: Request, db: Session = Depends(get_db)):
 {% endblock %}
 ```
 
-### `eod_reporter/templates/preview.html`
+### `app/templates/preview.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}Preview — EOD Reporter{% endblock %}
+{% block title %}Preview - EOD Reporter{% endblock %}
 
 {% block content %}
-<h1>EOD Preview — {{ target_date.strftime("%B %-d, %Y") }}</h1>
+<h1>EOD Preview - {{ target_date.strftime("%B %#d, %Y") }}</h1>
 
 {% if report %}
 <section class="card">
-    <!-- Status Badge -->
     <div class="status-badge status-{{ report.status.value }}">
         {{ report.status.value | upper }}
     </div>
 
-    <!-- Narrative Preview -->
     <div class="preview-box">
-        <h3>{{ target_date.strftime("%B %-d, %Y") }}</h3>
+        <h3>{{ target_date.strftime("%B %#d, %Y") }}</h3>
         <p>{{ report.narrative }}</p>
     </div>
 
-    <!-- Edit Form -->
     {% if report.status.value != "posted" %}
     <details>
         <summary>Edit narrative</summary>
@@ -1360,7 +1520,6 @@ def report_history(request: Request, db: Session = Depends(get_db)):
         </form>
     </details>
 
-    <!-- Post to Teams -->
     <form method="post" action="/reports/{{ report.id }}/post-to-teams" class="post-form">
         <button type="submit" class="btn-primary btn-post"
                 onclick="return confirm('Post this EOD to Teams?')">
@@ -1369,11 +1528,10 @@ def report_history(request: Request, db: Session = Depends(get_db)):
     </form>
     {% else %}
     <p class="posted-notice">
-        Posted to Teams at {{ report.posted_at.strftime("%H:%M on %B %-d, %Y") }}
+        Posted to Teams at {{ report.posted_at.strftime("%H:%M on %B %#d, %Y") }}
     </p>
     {% endif %}
 
-    <!-- Regenerate -->
     <form method="post" action="/reports/generate?target_date={{ target_date.isoformat() }}">
         <button type="submit" class="btn-secondary">Regenerate</button>
     </form>
@@ -1387,11 +1545,11 @@ def report_history(request: Request, db: Session = Depends(get_db)):
 {% endblock %}
 ```
 
-### `eod_reporter/templates/history.html`
+### `app/templates/history.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}History — EOD Reporter{% endblock %}
+{% block title %}History - EOD Reporter{% endblock %}
 
 {% block content %}
 <h1>Report History</h1>
@@ -1400,7 +1558,7 @@ def report_history(request: Request, db: Session = Depends(get_db)):
 {% for report in reports %}
 <section class="card history-card">
     <div class="history-header">
-        <h3>{{ report.date.strftime("%B %-d, %Y") }}</h3>
+        <h3>{{ report.date.strftime("%B %#d, %Y") }}</h3>
         <span class="status-badge status-{{ report.status.value }}">
             {{ report.status.value }}
         </span>
@@ -1409,7 +1567,7 @@ def report_history(request: Request, db: Session = Depends(get_db)):
     <div class="history-meta">
         Generated: {{ report.generated_at.strftime("%H:%M") }}
         {% if report.posted_at %}
-        · Posted: {{ report.posted_at.strftime("%H:%M") }}
+        &middot; Posted: {{ report.posted_at.strftime("%H:%M") }}
         {% endif %}
     </div>
 </section>
@@ -1422,11 +1580,7 @@ def report_history(request: Request, db: Session = Depends(get_db)):
 {% endblock %}
 ```
 
----
-
-## Step 7: Static Files
-
-### `eod_reporter/static/style.css`
+### `app/static/style.css`
 
 ```css
 /* ── Reset & Base ── */
@@ -1616,41 +1770,37 @@ details summary {
 
 ---
 
-## Step 8: FastAPI App (Main Entry Point)
+## Step 9: Main App + Scheduler
 
-### `eod_reporter/main.py`
+### `app/main.py`
 
 ```python
-import os
 from contextlib import asynccontextmanager
 from datetime import date
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from dotenv import load_dotenv
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
-from eod_reporter.database import init_db, SessionLocal
-from eod_reporter.routers import activities, reports
-from eod_reporter.services.activity_service import get_activities_grouped, get_activities_by_date
-from eod_reporter.services.report_service import save_report
-from eod_reporter.agent.graph import eod_agent
-
-load_dotenv()
+from app.core.config import get_settings
+from app.core.database import init_db, SessionLocal
+from app.services.activity_service import activity_service
+from app.services.report_service import report_service
+from app.agent.graph import eod_agent
+from app.api.v1.router import api_router
+from app.api.v1.endpoints.pages import router as pages_router
 
 scheduler = BackgroundScheduler()
 
 
 def scheduled_eod_generation():
-    """Called by APScheduler at the configured time. Generates a draft EOD if activities exist."""
+    """Called by APScheduler at the configured time."""
     db = SessionLocal()
     try:
         today = date.today()
-        activities_list = get_activities_by_date(db, today)
-        if not activities_list:
-            print("[Scheduler] No activities logged today. Skipping EOD generation.")
+        activities = activity_service.get_by_date(db, today)
+        if not activities:
+            print("[Scheduler] No activities logged today. Skipping.")
             return
 
         print(f"[Scheduler] Generating EOD for {today}...")
@@ -1665,7 +1815,7 @@ def scheduled_eod_generation():
             "final_narrative": "",
         })
         narrative = result.get("final_narrative", result.get("draft", ""))
-        save_report(db, today, narrative)
+        report_service.save(db, today, narrative)
         print(f"[Scheduler] EOD draft saved. Visit /reports/preview to review and post.")
     finally:
         db.close()
@@ -1673,13 +1823,11 @@ def scheduled_eod_generation():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup/shutdown lifecycle."""
     # Startup
     init_db()
 
-    # Schedule EOD generation
-    schedule_time = os.getenv("EOD_SCHEDULE_TIME", "17:00")
-    hour, minute = map(int, schedule_time.split(":"))
+    settings = get_settings()
+    hour, minute = map(int, settings.EOD_SCHEDULE_TIME.split(":"))
     scheduler.add_job(
         scheduled_eod_generation,
         "cron",
@@ -1688,7 +1836,7 @@ async def lifespan(app: FastAPI):
         id="eod_generation",
     )
     scheduler.start()
-    print(f"[Scheduler] EOD generation scheduled daily at {schedule_time}")
+    print(f"[Scheduler] EOD generation scheduled daily at {settings.EOD_SCHEDULE_TIME}")
 
     yield
 
@@ -1698,83 +1846,59 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="EOD Reporter", lifespan=lifespan)
 
-# Mount static files and templates
-app.mount("/static", StaticFiles(directory="eod_reporter/static"), name="static")
-templates = Jinja2Templates(directory="eod_reporter/templates")
+# Static files
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-# Include routers
-app.include_router(activities.router)
-app.include_router(reports.router)
+# API routes (JSON endpoints)
+app.include_router(api_router)
 
-
-@app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request):
-    """Main dashboard: log activities and view today's entries."""
-    db = SessionLocal()
-    try:
-        today = date.today()
-        grouped = get_activities_grouped(db, today)
-        all_activities = get_activities_by_date(db, today)
-        return templates.TemplateResponse(
-            "dashboard.html",
-            {
-                "request": request,
-                "today": today,
-                "grouped_activities": grouped,
-                "has_activities": len(all_activities) > 0,
-            },
-        )
-    finally:
-        db.close()
+# Page routes (HTML — mounted at root, not under /api/v1)
+app.include_router(pages_router)
 ```
 
 ---
 
-## Step 9: CLI
+## Step 10: CLI
 
-### `eod_reporter/cli.py`
+### `app/cli.py`
 
 ```python
-import os
-import webbrowser
-from datetime import date
-
 import typer
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from eod_reporter.database import init_db, SessionLocal
-from eod_reporter.models import TimePeriod
-from eod_reporter.services.activity_service import log_activity, get_activities_grouped
-from eod_reporter.services.report_service import get_report_by_date, save_report
-from eod_reporter.services.teams_poster import TeamsPoster
-from eod_reporter.agent.graph import eod_agent
+from datetime import date
+
+from app.core.config import get_settings
+from app.core.database import init_db, SessionLocal
+from app.models.activity import TimePeriod
+from app.services.activity_service import activity_service
+from app.services.report_service import report_service
+from app.services.teams_service import TeamsPoster
+from app.agent.graph import eod_agent
 
 load_dotenv()
 init_db()
 
-app = typer.Typer(help="EOD Reporter — Log activities and generate End of Day reports")
+app = typer.Typer(help="EOD Reporter - Log activities and generate End of Day reports")
 console = Console()
 
 
 @app.command()
 def log(
-    content: str = typer.Argument(..., help="What you did (e.g., 'Had team huddle')"),
-    time: str = typer.Option(
-        None, "--time", "-t",
-        help="Override time period: morning, afternoon, or evening",
-    ),
+    content: str = typer.Argument(..., help="What you did"),
+    time: str = typer.Option(None, "--time", "-t", help="Override: morning, afternoon, evening"),
 ):
     """Log an activity with the current timestamp."""
     db = SessionLocal()
     try:
         override = TimePeriod(time) if time else None
-        activity = log_activity(db, content=content, time_period_override=override)
+        activity = activity_service.log_activity(db, content=content, time_period_override=override)
         period = activity.effective_time_period.value
         console.print(
-            f"[green]✓[/green] Logged at {activity.logged_at.strftime('%H:%M')} "
+            f"[green]>[/green] Logged at {activity.logged_at.strftime('%H:%M')} "
             f"[dim]({period})[/dim]: {content}"
         )
     finally:
@@ -1783,18 +1907,15 @@ def log(
 
 @app.command(name="list")
 def list_activities(
-    target_date: str = typer.Option(
-        None, "--date", "-d",
-        help="Date to show (YYYY-MM-DD), defaults to today",
-    ),
+    target_date: str = typer.Option(None, "--date", "-d", help="YYYY-MM-DD, defaults to today"),
 ):
     """Show today's logged activities grouped by time period."""
     db = SessionLocal()
     try:
         d = date.fromisoformat(target_date) if target_date else date.today()
-        grouped = get_activities_grouped(db, d)
+        grouped = activity_service.get_grouped(db, d)
 
-        table = Table(title=f"Activities — {d.strftime('%B %-d, %Y')}")
+        table = Table(title=f"Activities - {d.strftime('%B %#d, %Y')}")
         table.add_column("Time", style="cyan", width=8)
         table.add_column("Period", style="dim", width=12)
         table.add_column("Activity")
@@ -1816,23 +1937,20 @@ def list_activities(
 
 @app.command()
 def compile(
-    target_date: str = typer.Option(
-        None, "--date", "-d",
-        help="Date to compile (YYYY-MM-DD), defaults to today",
-    ),
+    target_date: str = typer.Option(None, "--date", "-d", help="YYYY-MM-DD, defaults to today"),
 ):
     """Generate an EOD report using the LangGraph agent."""
     db = SessionLocal()
     try:
         d = date.fromisoformat(target_date) if target_date else date.today()
-        grouped = get_activities_grouped(db, d)
+        grouped = activity_service.get_grouped(db, d)
 
         total = sum(len(v) for v in grouped.values())
         if total == 0:
             console.print("[yellow]No activities logged for this date.[/yellow]")
             raise typer.Exit(1)
 
-        console.print(f"\n[bold blue]Generating EOD for {d.strftime('%B %-d, %Y')}...[/bold blue]")
+        console.print(f"\n[bold blue]Generating EOD for {d.strftime('%B %#d, %Y')}...[/bold blue]")
 
         result = eod_agent.invoke({
             "date": d.isoformat(),
@@ -1846,18 +1964,17 @@ def compile(
         })
 
         narrative = result.get("final_narrative", result.get("draft", ""))
-        report = save_report(db, d, narrative)
+        report = report_service.save(db, d, narrative)
 
         console.print(Panel(
             narrative,
-            title=f"EOD Report — {d.strftime('%B %-d, %Y')}",
+            title=f"EOD Report - {d.strftime('%B %#d, %Y')}",
             border_style="green",
         ))
         console.print(f"[dim]Word count: {len(narrative.split())}[/dim]")
         console.print(f"[dim]Report saved as draft (ID: {report.id})[/dim]")
         console.print(
-            f"\n[bold]Open [link=http://localhost:8000/reports/preview?target_date={d}]"
-            f"http://localhost:8000/reports/preview?target_date={d}[/link] to review and post.[/bold]"
+            f"\n[bold]Open http://localhost:8000/reports/preview?target_date={d} to review and post.[/bold]"
         )
     finally:
         db.close()
@@ -1865,16 +1982,13 @@ def compile(
 
 @app.command()
 def post(
-    target_date: str = typer.Option(
-        None, "--date", "-d",
-        help="Date of report to post (YYYY-MM-DD), defaults to today",
-    ),
+    target_date: str = typer.Option(None, "--date", "-d", help="YYYY-MM-DD, defaults to today"),
 ):
     """Post the latest report to Teams."""
     db = SessionLocal()
     try:
         d = date.fromisoformat(target_date) if target_date else date.today()
-        report = get_report_by_date(db, d)
+        report = report_service.get_by_date(db, d)
 
         if not report:
             console.print("[yellow]No report found. Run 'compile' first.[/yellow]")
@@ -1887,13 +2001,10 @@ def post(
             console.print("[yellow]Cancelled.[/yellow]")
             raise typer.Exit()
 
-        webhook_url = os.getenv("TEAMS_WEBHOOK_URL")
-        if not webhook_url:
-            console.print("[red]TEAMS_WEBHOOK_URL not set in .env[/red]")
-            raise typer.Exit(1)
-
-        poster = TeamsPoster(webhook_url)
+        settings = get_settings()
+        poster = TeamsPoster(settings.TEAMS_WEBHOOK_URL)
         poster.post(report)
+        report_service.mark_posted(db, report.id)
         console.print("[bold green]Posted to Teams![/bold green]")
     finally:
         db.close()
@@ -1902,12 +2013,8 @@ def post(
 @app.command()
 def test_webhook():
     """Test the Teams webhook connection."""
-    webhook_url = os.getenv("TEAMS_WEBHOOK_URL")
-    if not webhook_url:
-        console.print("[red]TEAMS_WEBHOOK_URL not set in .env[/red]")
-        raise typer.Exit(1)
-
-    poster = TeamsPoster(webhook_url)
+    settings = get_settings()
+    poster = TeamsPoster(settings.TEAMS_WEBHOOK_URL)
     if poster.test_connection():
         console.print("[bold green]Webhook is working! Check your Teams channel.[/bold green]")
     else:
@@ -1920,78 +2027,58 @@ if __name__ == "__main__":
 
 ---
 
-## Step 10: Running the App
+## Running the App
 
 ### Start the web server
 
 ```bash
 cd "c:\Users\Jansen Cruz\Desktop\Jansen\internity"
 
-# Run with uv
-uv run uvicorn eod_reporter.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
 Open http://localhost:8000 in your browser.
 
-### Use the CLI
-
-Open another terminal:
+### Use the CLI (separate terminal)
 
 ```bash
 cd "c:\Users\Jansen Cruz\Desktop\Jansen\internity"
 
 # Log activities throughout the day
-uv run python -m eod_reporter.cli log "Had weekly team huddle"
-uv run python -m eod_reporter.cli log "Tested workflow agent responses"
-uv run python -m eod_reporter.cli log "Daily check-in with David and Matt"
-uv run python -m eod_reporter.cli log "Worked on PDF conversion service" --time afternoon
+uv run eod log "Had weekly team huddle"
+uv run eod log "Team huddle for Project 2 - discussed and delegated tasks"
+uv run eod log "Tested workflow - monitored agent responses to emails"
+uv run eod log "Daily check-in with David and Matt" --time afternoon
+uv run eod log "Worked on PDF conversion service" --time afternoon
 
 # View today's activities
-uv run python -m eod_reporter.cli list
+uv run eod list
 
 # Generate EOD report
-uv run python -m eod_reporter.cli compile
+uv run eod compile
 
 # Post to Teams (from CLI)
-uv run python -m eod_reporter.cli post
+uv run eod post
 
 # Test webhook connection
-uv run python -m eod_reporter.cli test-webhook
-```
-
-### Alternative: Register the CLI as a script
-
-Add this to your `pyproject.toml` so you can run `eod` directly:
-
-```toml
-[project.scripts]
-eod = "eod_reporter.cli:app"
-```
-
-Then you can use:
-
-```bash
-uv run eod log "Had team huddle"
-uv run eod list
-uv run eod compile
-uv run eod post
+uv run eod test-webhook
 ```
 
 ---
 
 ## Quick Reference
 
-| Action | CLI Command | Web |
+| Action | CLI | Web |
 |---|---|---|
-| Log activity | `uv run eod log "text"` | Dashboard → type and submit |
-| Log with time override | `uv run eod log "text" --time morning` | Dashboard → edit dropdown |
+| Log activity | `uv run eod log "text"` | Dashboard: type and submit |
+| Log with time override | `uv run eod log "text" --time morning` | Dashboard: edit dropdown |
 | View activities | `uv run eod list` | Dashboard |
-| Generate EOD | `uv run eod compile` | Dashboard → "Generate Report" |
-| Preview EOD | Open browser link after compile | `/reports/preview` |
-| Edit EOD | Web only | Preview → "Edit narrative" |
-| Post to Teams | `uv run eod post` | Preview → "Post to Teams" |
+| Generate EOD | `uv run eod compile` | Dashboard: "Generate Report" |
+| Preview EOD | Browser link after compile | `/reports/preview` |
+| Edit EOD | Web only | Preview: "Edit narrative" |
+| Post to Teams | `uv run eod post` | Preview: "Post to Teams" |
 | View history | Web only | `/reports/history` |
-| Test webhook | `uv run eod test-webhook` | — |
+| Test webhook | `uv run eod test-webhook` | - |
 
 ---
 
@@ -1999,20 +2086,21 @@ uv run eod post
 
 | Issue | Fix |
 |---|---|
-| `ANTHROPIC_API_KEY not set` | Make sure `.env` exists and has your key |
+| `GOOGLE_API_KEY not set` | Make sure `.env` exists with your key from aistudio.google.com |
 | `TEAMS_WEBHOOK_URL not set` | Add your webhook URL to `.env` |
 | Webhook returns 400/403 | Recreate the webhook in Teams Workflows app |
 | `ModuleNotFoundError` | Run `uv sync` to install dependencies |
-| Database errors | Delete `eod_reporter.db` and restart (tables will be recreated) |
-| LLM returns bullet points | The self-review node should catch this; if persistent, add more few-shot examples to `prompts.py` |
-| `strftime %-d` errors on Windows | Replace `%-d` with `%#d` in all `.strftime()` calls (Windows uses `%#d` instead of `%-d` for day without leading zero) |
+| Database errors | Delete `eod_reporter.db` and restart (tables recreated automatically) |
+| LLM returns bullet points | Self-review should catch this; if persistent, add more examples to `examples.json` |
+| Structured output parsing fails | The fallback in `self_review` accepts the draft; check Gemini model availability |
+| `strftime %#d` not working | `%#d` is Windows-specific (no leading zero). On Linux/Mac use `%-d` instead |
 
 ---
 
 ## What's Next (Optional Enhancements)
 
-- **Desktop notifications** when the scheduler generates a draft (use `plyer` or `win10toast`)
-- **Slack integration** as an alternative to Teams
+- **Desktop notifications** when scheduler generates a draft (use `plyer` or `win10toast`)
+- **Add more few-shot examples** over time from your best EODs to `examples.json`
+- **Weekly summary** agent that compiles all EODs from the week
 - **Docker deployment** for always-on access
-- **Add more few-shot examples** over time from your best EODs to improve generation quality
-- **Weekly summary** agent that compiles all EODs from the week into a weekly report
+- **Slack integration** as alternative to Teams
