@@ -14,11 +14,18 @@ class TeamsPoster:
             "message": report.narrative,
         }
 
+        print("[Teams] Posting to Power Automate...")
+        print(f"[Teams] Payload: {payload}")
+
         response = httpx.post(
             self.power_automate_url,
             json=payload,
             timeout=30,
         )
+
+        print(f"[Teams] Response status: {response.status_code}")
+        print(f"[Teams] Response body: {response.text[:500]}")
+
         response.raise_for_status()
         return True
 

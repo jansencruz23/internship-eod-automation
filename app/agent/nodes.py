@@ -30,6 +30,7 @@ def get_llm() -> ChatGoogleGenerativeAI:
         settings = get_settings()
         _llm = ChatGoogleGenerativeAI(
             model=settings.MODEL_NAME,
+            google_api_key=settings.GOOGLE_API_KEY,
             max_output_tokens=1024,
         )
     return _llm

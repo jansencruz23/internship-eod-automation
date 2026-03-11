@@ -1,5 +1,8 @@
+import uvicorn
+
+
 def main():
-    print("Hello from internity!")
+    uvicorn.run("app.main:app", reload=True, port=8000)
 
 
 if __name__ == "__main__":
