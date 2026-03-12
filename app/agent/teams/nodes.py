@@ -1,9 +1,9 @@
 from datetime import date
 
-from langchain_google_genai import ChatGoogleGenerativeAI
 from sqlalchemy.orm import Session
 
 from app.agent.state import EODState
+from app.agent.llm import get_llm
 from app.agent.teams.prompts import (
     GENERATE_PROMPT,
     REVIEW_PROMPT,
@@ -11,29 +11,9 @@ from app.agent.teams.prompts import (
     format_few_shot_examples,
     format_activities_for_prompt,
 )
-from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.schemas.report import ReviewResult
 from app.services.activity_service import activity_service
-
-
-# ──────────────────────────────────────────────
-# LLM Initialization (Gemini)
-# ──────────────────────────────────────────────
-
-_llm: ChatGoogleGenerativeAI | None = None
-
-
-def get_llm() -> ChatGoogleGenerativeAI:
-    global _llm
-    if _llm is None:
-        settings = get_settings()
-        _llm = ChatGoogleGenerativeAI(
-            model=settings.MODEL_NAME,
-            google_api_key=settings.GOOGLE_API_KEY,
-            max_output_tokens=1024,
-        )
-    return _llm
 
 
 # ──────────────────────────────────────────────
@@ -101,7 +81,6 @@ def self_review(state: EODState) -> dict:
     activities_text = format_activities_for_prompt(state["grouped_activities"])
 
     try:
-        # Use structured output — eliminates fragile string parsing
         structured_llm = llm.with_structured_output(ReviewResult)
         chain = REVIEW_PROMPT | structured_llm
 
@@ -119,7 +98,6 @@ def self_review(state: EODState) -> dict:
             + (0 if result.approved else 1),
         }
     except Exception:
-        # Fallback: accept the draft if structured output fails
         return {
             "review_feedback": "Review unavailable — accepting draft.",
             "review_approved": True,

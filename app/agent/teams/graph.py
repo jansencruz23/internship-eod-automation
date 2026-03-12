@@ -26,19 +26,16 @@ def finalize(state: EODState) -> dict:
 def build_eod_graph() -> StateGraph:
     graph = StateGraph(EODState)
 
-    # Add nodes
     graph.add_node("fetch_activities", fetch_activities)
     graph.add_node("generate_draft", generate_draft)
     graph.add_node("self_review", self_review)
     graph.add_node("revise_draft", revise_draft)
     graph.add_node("finalize", finalize)
 
-    # Define edges
     graph.set_entry_point("fetch_activities")
     graph.add_edge("fetch_activities", "generate_draft")
     graph.add_edge("generate_draft", "self_review")
 
-    # Conditional: review passes → finalize, fails → revise (cap at 2)
     graph.add_conditional_edges(
         "self_review",
         should_revise,
@@ -53,5 +50,4 @@ def build_eod_graph() -> StateGraph:
     return graph.compile()
 
 
-# Pre-compiled graph instance
 eod_agent = build_eod_graph()
