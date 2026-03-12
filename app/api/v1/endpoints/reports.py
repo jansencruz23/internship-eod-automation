@@ -12,7 +12,7 @@ from app.models.settings import AppSettings
 from app.services.activity_service import activity_service
 from app.services.report_service import report_service
 from app.services.teams_service import TeamsPoster
-from app.agent.graph import eod_agent
+from app.agent.teams.graph import eod_agent
 
 router = APIRouter()
 
@@ -94,7 +94,7 @@ def _render_toggle(enabled: bool) -> str:
                hx-swap="innerHTML">
         <span class="slider"></span>
     </label>
-    <span class="toggle-label toggle-{'on' if enabled else 'off'}">{label}</span>
+    <span class="toggle-label toggle-{"on" if enabled else "off"}">{label}</span>
     """
 
 
@@ -145,6 +145,7 @@ def update_schedule_time(
 
     # Reschedule the APScheduler job
     from app.main import scheduler
+
     scheduler.reschedule_job(
         "eod_generation",
         trigger="cron",

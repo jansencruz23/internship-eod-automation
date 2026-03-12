@@ -12,7 +12,7 @@ from app.models.activity import TimePeriod
 from app.services.activity_service import activity_service
 from app.services.report_service import report_service
 from app.services.teams_service import TeamsPoster
-from app.agent.graph import eod_agent
+from app.agent.teams.graph import eod_agent
 
 load_dotenv()
 init_db()

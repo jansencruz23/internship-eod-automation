@@ -4,7 +4,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from sqlalchemy.orm import Session
 
 from app.agent.state import EODState
-from app.agent.prompts import (
+from app.agent.teams.prompts import (
     GENERATE_PROMPT,
     REVIEW_PROMPT,
     REVISE_PROMPT,

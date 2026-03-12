@@ -1,7 +1,7 @@
 from langgraph.graph import StateGraph, END
 
 from app.agent.state import EODState
-from app.agent.nodes import (
+from app.agent.teams.nodes import (
     fetch_activities,
     generate_draft,
     self_review,
