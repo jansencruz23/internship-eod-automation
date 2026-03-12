@@ -34,8 +34,11 @@ class InternityPoster:
 
                 # Step 2: Navigate to EOD form
                 print(f"[Internity] Navigating to {self.form_url}")
-                page.goto(self.form_url, wait_until="networkidle")
-                page.wait_for_timeout(1000)
+                page.goto(self.form_url, wait_until="domcontentloaded")
+                # Wait for the form to actually render
+                page.get_by_role("button", name="Submit Report").wait_for(
+                    state="visible", timeout=10000
+                )
 
                 # Step 3: Fill tasks
                 self._fill_tasks(page, eod_data.tasks)
@@ -50,9 +53,9 @@ class InternityPoster:
                 if dry_run:
                     print(
                         "[Internity] Dry run — form filled but NOT submitted. "
-                        "Browser will stay open for 60 seconds for inspection."
+                        "Close the browser or press Resume in Inspector to exit."
                     )
-                    page.wait_for_timeout(60_000)
+                    page.pause()  # opens Playwright Inspector for manual inspection
                     return True
 
                 # Step 5: Submit
@@ -71,26 +74,33 @@ class InternityPoster:
     def _login(self, page):
         """Navigate to login page and authenticate."""
         print("[Internity] Logging in...")
-        page.goto(f"{self.base_url}/login", wait_until="networkidle")
+        page.goto(f"{self.base_url}/login", wait_until="domcontentloaded")
 
         # --- CALIBRATE THESE SELECTORS ---
         # Inspect the actual login page and update if needed.
-        page.fill(
-            'input[type="email"], input[name="email"], input[name="username"]',
-            self.username,
+        # Using semantic locators (get_by_label / get_by_role) over CSS selectors.
+        page.get_by_label("Email").fill(self.username)
+        page.get_by_label("Password").fill(self.password)
+        page.get_by_role("button", name="Sign in").click()
+
+        # Verify login succeeded — should navigate away from /login
+        page.wait_for_url(
+            lambda url: "/login" not in url, timeout=10000
         )
-        page.fill('input[type="password"], input[name="password"]', self.password)
-        page.click('button[type="submit"], input[type="submit"]')
-        page.wait_for_load_state("networkidle")
         print("[Internity] Logged in successfully.")
 
     def _fill_tasks(self, page, tasks):
         """Fill repeatable task rows, clicking 'Add Another Task' as needed."""
         for i, task in enumerate(tasks):
             if i > 0:
-                add_btn = page.get_by_text("Add Another Task", exact=False)
+                add_btn = page.get_by_role(
+                    "button", name="Add Another Task"
+                )
                 add_btn.click()
-                page.wait_for_timeout(500)
+                # Wait for the new task field to appear before filling
+                page.get_by_placeholder("Task Description").nth(i).wait_for(
+                    state="visible", timeout=5000
+                )
 
             # --- CALIBRATE THESE SELECTORS ---
             # Based on the screenshot, fields use placeholder text.
@@ -129,22 +139,50 @@ class InternityPoster:
         print(f"[Internity] WARNING: Could not find field '{label_text}'")
 
     def _submit(self, page):
-        """Click the submit button and wait for confirmation."""
-        submit_btn = page.get_by_text("Submit Report", exact=False)
+        """Click the submit button and verify submission succeeded."""
+        submit_btn = page.get_by_role("button", name="Submit Report")
         submit_btn.click()
-        page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(2000)
+
+        # --- CALIBRATE THIS ASSERTION ---
+        # Verify submission succeeded. Update to match the actual success
+        # indicator on aufccs.org (success message, URL change, etc.)
+        page.wait_for_url(
+            lambda url: "end_of_day_reports/create" not in url, timeout=15000
+        )
         print("[Internity] Form submitted successfully.")
 
-    def test_connection(self) -> bool:
-        """Test that login works without submitting anything."""
+    def test_connection(self, headed: bool = False) -> bool:
+        """Test that login works without submitting anything.
+
+        Args:
+            headed: If True, launches visible browser with page.pause()
+                    so you can inspect the DOM with Playwright Inspector.
+        """
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
+                browser = p.chromium.launch(headless=not headed)
                 page = browser.new_page()
+
+                if headed:
+                    print("[Internity] Headed mode — navigating to login page...")
+                    page.goto(f"{self.base_url}/login", wait_until="domcontentloaded")
+                    print(
+                        "[Internity] Pausing — use Playwright Inspector to inspect "
+                        "the login form elements. Press Resume when done."
+                    )
+                    page.pause()
+                    browser.close()
+                    return True
+
                 self._login(page)
                 browser.close()
                 return True
         except Exception as e:
             print(f"[Internity] Connection test failed: {e}")
+            if not headed:
+                try:
+                    page.screenshot(path="debug_login.png")
+                    print("[Internity] Screenshot saved to debug_login.png")
+                except Exception:
+                    pass
             return False

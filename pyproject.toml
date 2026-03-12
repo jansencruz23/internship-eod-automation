@@ -23,5 +23,12 @@ dependencies = [
     "uvicorn>=0.41.0",
 ]
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
 [project.scripts]
 eod = "app.cli:app"

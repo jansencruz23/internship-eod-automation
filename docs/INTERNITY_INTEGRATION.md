@@ -1015,6 +1015,13 @@ def generate_internity_eod(grouped_activities: dict) -> InternityEOD:
 
 **Create this new file.** Mirrors `TeamsPoster` structure.
 
+> **Playwright best practices applied:**
+> - No `wait_for_timeout()` — uses element waits and assertions instead
+> - No `networkidle` — uses `domcontentloaded` + element visibility waits
+> - Semantic locators (`get_by_label`, `get_by_role`) preferred over CSS selectors
+> - Post-action assertions verify login success and form submission
+> - `page.pause()` for dry-run instead of arbitrary timeout
+
 ```python
 from datetime import date
 
@@ -1052,8 +1059,11 @@ class InternityPoster:
 
                 # Step 2: Navigate to EOD form
                 print(f"[Internity] Navigating to {self.form_url}")
-                page.goto(self.form_url, wait_until="networkidle")
-                page.wait_for_timeout(1000)
+                page.goto(self.form_url, wait_until="domcontentloaded")
+                # Wait for the form to actually render
+                page.get_by_role("button", name="Submit Report").wait_for(
+                    state="visible", timeout=10000
+                )
 
                 # Step 3: Fill tasks
                 self._fill_tasks(page, eod_data.tasks)
@@ -1068,9 +1078,9 @@ class InternityPoster:
                 if dry_run:
                     print(
                         "[Internity] Dry run — form filled but NOT submitted. "
-                        "Browser will stay open for 60 seconds for inspection."
+                        "Close the browser or press Resume in Inspector to exit."
                     )
-                    page.wait_for_timeout(60_000)
+                    page.pause()  # opens Playwright Inspector for manual inspection
                     return True
 
                 # Step 5: Submit
@@ -1089,26 +1099,33 @@ class InternityPoster:
     def _login(self, page):
         """Navigate to login page and authenticate."""
         print("[Internity] Logging in...")
-        page.goto(f"{self.base_url}/login", wait_until="networkidle")
+        page.goto(f"{self.base_url}/login", wait_until="domcontentloaded")
 
         # --- CALIBRATE THESE SELECTORS ---
         # Inspect the actual login page and update if needed.
-        page.fill(
-            'input[type="email"], input[name="email"], input[name="username"]',
-            self.username,
+        # Using semantic locators (get_by_label / get_by_role) over CSS selectors.
+        page.get_by_label("Email").fill(self.username)
+        page.get_by_label("Password").fill(self.password)
+        page.get_by_role("button", name="Sign in").click()
+
+        # Verify login succeeded — should navigate away from /login
+        page.wait_for_url(
+            lambda url: "/login" not in url, timeout=10000
         )
-        page.fill('input[type="password"], input[name="password"]', self.password)
-        page.click('button[type="submit"], input[type="submit"]')
-        page.wait_for_load_state("networkidle")
         print("[Internity] Logged in successfully.")
 
     def _fill_tasks(self, page, tasks):
         """Fill repeatable task rows, clicking 'Add Another Task' as needed."""
         for i, task in enumerate(tasks):
             if i > 0:
-                add_btn = page.get_by_text("Add Another Task", exact=False)
+                add_btn = page.get_by_role(
+                    "button", name="Add Another Task"
+                )
                 add_btn.click()
-                page.wait_for_timeout(500)
+                # Wait for the new task field to appear before filling
+                page.get_by_placeholder("Task Description").nth(i).wait_for(
+                    state="visible", timeout=5000
+                )
 
             # --- CALIBRATE THESE SELECTORS ---
             # Based on the screenshot, fields use placeholder text.
@@ -1147,11 +1164,16 @@ class InternityPoster:
         print(f"[Internity] WARNING: Could not find field '{label_text}'")
 
     def _submit(self, page):
-        """Click the submit button and wait for confirmation."""
-        submit_btn = page.get_by_text("Submit Report", exact=False)
+        """Click the submit button and verify submission succeeded."""
+        submit_btn = page.get_by_role("button", name="Submit Report")
         submit_btn.click()
-        page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(2000)
+
+        # --- CALIBRATE THIS ASSERTION ---
+        # Verify submission succeeded. Update to match the actual success
+        # indicator on aufccs.org (success message, URL change, etc.)
+        page.wait_for_url(
+            lambda url: "end_of_day_reports/create" not in url, timeout=15000
+        )
         print("[Internity] Form submitted successfully.")
 
     def test_connection(self) -> bool:
@@ -1167,6 +1189,18 @@ class InternityPoster:
             print(f"[Internity] Connection test failed: {e}")
             return False
 ```
+
+### What changed from the original (Playwright best practices)
+
+| Change | Before (anti-pattern) | After (best practice) |
+|---|---|---|
+| Form load wait | `wait_until="networkidle"` + `wait_for_timeout(1000)` | `wait_until="domcontentloaded"` + wait for Submit button visible |
+| Login selectors | CSS: `'input[type="email"]...'` | Semantic: `get_by_label("Email")`, `get_by_role("button")` |
+| Login verification | None (just printed "success") | `wait_for_url()` asserts we left `/login` |
+| Add task wait | `wait_for_timeout(500)` | `get_by_placeholder(...).nth(i).wait_for(state="visible")` |
+| Dry-run pause | `wait_for_timeout(60_000)` | `page.pause()` (opens Playwright Inspector) |
+| Submit verification | `wait_for_load_state("networkidle")` + `wait_for_timeout(2000)` | `wait_for_url()` asserts we left the create page |
+| Add task button | `get_by_text(...)` | `get_by_role("button", name=...)` |
 
 ---
 
@@ -2186,7 +2220,7 @@ Expected: `Internity login successful!`
 uv run eod internity --dry-run
 ```
 
-Opens a visible browser, fills the form, pauses 60 seconds. Check that all fields are filled correctly.
+Opens a visible browser, fills the form, then opens the Playwright Inspector. Check that all fields are filled correctly, then close the browser or press Resume to exit.
 
 ### 4. Full submission
 
@@ -2230,6 +2264,6 @@ page.screenshot(path="debug_form.png")
 | Login fails | Check login page URL — might not be `/login`. Inspect and update `_login()` |
 | "Add Another Task" not found | Inspect the button text. Update `get_by_text()` call |
 | Fields not being filled | Run with `--dry-run` and inspect. Update selectors |
-| Timeout errors | Increase `wait_for_timeout()` values |
+| Timeout errors | Increase `timeout` values in `wait_for()` / `wait_for_url()` calls |
 | `INTERNITY_USERNAME not set` | Add all 3 vars to `.env` |
 | `auto_post_internity_enabled` column error | `_run_migrations()` handles this automatically |

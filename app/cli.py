@@ -261,7 +261,11 @@ def internity(
 
 
 @app.command(name="test-internity")
-def test_internity():
+def test_internity(
+    headed: bool = typer.Option(
+        False, "--headed", help="Launch visible browser with Inspector for debugging selectors"
+    ),
+):
     """Test the Internity (aufccs.org) login connection."""
     settings = get_settings()
     if not settings.INTERNITY_USERNAME:
@@ -273,7 +277,7 @@ def test_internity():
         password=settings.INTERNITY_PASSWORD,
         form_url=settings.INTERNITY_FORM_URL,
     )
-    if poster.test_connection():
+    if poster.test_connection(headed=headed):
         console.print("[bold green]Internity login successful![/bold green]")
     else:
         console.print(
