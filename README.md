@@ -35,9 +35,11 @@ An automated End of Day report generator for interns. Log work activities throug
 ## Setup
 
 ```bash
-# Clone and install
+# Clone and install (Python 3.12 required — 3.13/3.14 will cause build errors)
 git clone https://github.com/jansencruz23/internship-eod-automation.git
 cd internship-eod-automation
+uv python install 3.12
+uv venv --python 3.12
 uv sync
 
 # Install Playwright browser
