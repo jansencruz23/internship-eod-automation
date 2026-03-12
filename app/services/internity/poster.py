@@ -76,12 +76,9 @@ class InternityPoster:
         print("[Internity] Logging in...")
         page.goto(f"{self.base_url}/login", wait_until="domcontentloaded")
 
-        # --- CALIBRATE THESE SELECTORS ---
-        # Inspect the actual login page and update if needed.
-        # Using semantic locators (get_by_label / get_by_role) over CSS selectors.
-        page.get_by_label("Email").fill(self.username)
-        page.get_by_label("Password").fill(self.password)
-        page.get_by_role("button", name="Sign in").click()
+        page.locator("#email").fill(self.username)
+        page.locator("#password").fill(self.password)
+        page.get_by_role("button", name="Log in").click()
 
         # Verify login succeeded — should navigate away from /login
         page.wait_for_url(
