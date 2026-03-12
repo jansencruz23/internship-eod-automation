@@ -204,6 +204,7 @@ def post_to_internity(
 def _render_internity_toggle(enabled: bool) -> str:
     checked = "checked" if enabled else ""
     label = "ON" if enabled else "OFF"
+    state = "on" if enabled else "off"
     return f"""
     <label class="toggle-switch">
         <input type="checkbox" {checked}
@@ -212,7 +213,7 @@ def _render_internity_toggle(enabled: bool) -> str:
                hx-swap="innerHTML">
         <span class="slider"></span>
     </label>
-    <span class="toggle-label toggle-{"on" if enabled else "off"}">{label}</span>
+    <span class="toggle-label toggle-{state}">{label}</span>
     """
 
 

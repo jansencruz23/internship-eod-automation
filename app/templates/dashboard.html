@@ -92,7 +92,7 @@
     </div>
 
     <div class="setting-row">
-        <span>Auto-post to Internity</span>
+        <span>Auto-fill Internity (browser popup)</span>
         <div id="internity-toggle-container">
             <label class="toggle-switch">
                 <input type="checkbox" {{ "checked" if auto_post_internity_enabled }}
@@ -107,6 +107,6 @@
         </div>
     </div>
 
-    <p class="hint">The report is generated daily at the scheduled time. When auto-post is on, it also posts to Teams and/or Internity automatically.</p>
+    <p class="hint">The report is generated daily at the scheduled time. When auto-post is on, it posts to Teams automatically. When auto-fill Internity is on, a browser opens with the form filled for you to review and submit manually.</p>
 </section>
 {% endblock %}

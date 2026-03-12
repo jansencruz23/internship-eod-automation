@@ -85,8 +85,8 @@ def scheduled_eod_generation():
                         password=settings.INTERNITY_PASSWORD,
                         form_url=settings.INTERNITY_FORM_URL,
                     )
-                    poster.post(internity_eod, today)
-                    print("[Scheduler] Auto-posted to Internity.")
+                    poster.post(internity_eod, today, auto_submit=False)
+                    print("[Scheduler] Internity form opened — review and submit manually.")
                 else:
                     print("[Scheduler] Internity credentials not configured. Skipping.")
             except Exception as e:

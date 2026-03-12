@@ -17,14 +17,14 @@ work into successes, challenges, and plans.
 [Guidelines]
 - Group related activities into coherent tasks (e.g., merge "tested workflow" \
 and "flagged responses" into one task about workflow testing)
-- Each task has a short bolded title followed by an em dash and a description
+- Each task has a short title followed by an em dash and a description
 - Format: "Title — Description of what was done"
 - Estimate hours and minutes for each task based on:
   * The time gaps between logged activities
   * The complexity implied by the description
   * Total work hours should sum to approximately 8 hours for a full day
 - Key successes: list concrete accomplishments, each on its own line with a \
-bolded title followed by an em dash and explanation
+title followed by an em dash and explanation
 - Main challenges: note any blockers or difficulties, same format as successes
 - Plans for tomorrow: infer reasonable next steps from today's activities, \
 written as a single sentence or short paragraph
@@ -35,7 +35,9 @@ written as a single sentence or short paragraph
 - Total hours across all tasks should approximately equal the work day length
 - Do NOT fabricate tasks or details not implied by the activity logs
 - Write in first person when appropriate
-- Keep the professional but natural tone shown in the examples"""
+- Keep the professional but natural tone shown in the examples
+- Do NOT use markdown formatting (no **bold**, no *italic*, no bullet points with -)
+- Output plain text only"""
 
 # ──────────────────────────────────────────────
 # Few-shot example from real user submissions
