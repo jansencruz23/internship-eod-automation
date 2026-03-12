@@ -22,6 +22,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     all_activities = activity_service.get_by_date(db, today)
     settings = db.query(AppSettings).first()
     auto_post_enabled = settings.auto_post_enabled if settings else False
+    auto_post_internity_enabled = (
+        settings.auto_post_internity_enabled if settings else False
+    )
     schedule_time = settings.schedule_time if settings else "15:35"
     return templates.TemplateResponse(
         "dashboard.html",
@@ -31,6 +34,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "grouped_activities": grouped,
             "has_activities": len(all_activities) > 0,
             "auto_post_enabled": auto_post_enabled,
+            "auto_post_internity_enabled": auto_post_internity_enabled,
             "schedule_time": schedule_time,
         },
     )

@@ -91,6 +91,22 @@
         </div>
     </div>
 
-    <p class="hint">The report is generated daily at the scheduled time. When auto-post is on, it also posts to Teams automatically.</p>
+    <div class="setting-row">
+        <span>Auto-post to Internity</span>
+        <div id="internity-toggle-container">
+            <label class="toggle-switch">
+                <input type="checkbox" {{ "checked" if auto_post_internity_enabled }}
+                       hx-post="/reports/toggle-auto-post-internity"
+                       hx-target="#internity-toggle-container"
+                       hx-swap="innerHTML">
+                <span class="slider"></span>
+            </label>
+            <span class="toggle-label toggle-{{ 'on' if auto_post_internity_enabled else 'off' }}">
+                {{ "ON" if auto_post_internity_enabled else "OFF" }}
+            </span>
+        </div>
+    </div>
+
+    <p class="hint">The report is generated daily at the scheduled time. When auto-post is on, it also posts to Teams and/or Internity automatically.</p>
 </section>
 {% endblock %}

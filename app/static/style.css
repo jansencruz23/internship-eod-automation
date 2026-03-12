@@ -264,3 +264,8 @@ details summary {
 .empty { color: #bbb; font-style: italic; }
 .hint { color: #888; font-size: 0.85rem; margin-top: 0.5rem; }
 .post-form { margin: 1rem 0; }
+
+/* ── Internity Button ── */
+.btn-internity { background: #B30600; }
+.btn-internity:hover { background: #8f0500; }
+.post-actions { display: flex; gap: 0.5rem; margin: 1rem 0; }

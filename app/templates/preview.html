@@ -24,12 +24,21 @@
         </form>
     </details>
 
-    <form method="post" action="/reports/{{ report.id }}/post-to-teams" class="post-form">
-        <button type="submit" class="btn-primary btn-post"
-                onclick="return confirm('Post this EOD to Teams?')">
-            Post to Teams
-        </button>
-    </form>
+    <div class="post-actions">
+        <form method="post" action="/reports/{{ report.id }}/post-to-teams" class="post-form">
+            <button type="submit" class="btn-primary btn-post"
+                    onclick="return confirm('Post this EOD to Teams?')">
+                Post to Teams
+            </button>
+        </form>
+
+        <form method="post" action="/reports/{{ report.id }}/post-to-internity" class="post-form">
+            <button type="submit" class="btn-internity btn-post"
+                    onclick="return confirm('Submit this EOD to Internity (aufccs.org)?\nThis will open a headless browser and fill the form automatically.')">
+                Submit to Internity
+            </button>
+        </form>
+    </div>
     {% else %}
     <p class="posted-notice">
         Posted to Teams at {{ report.posted_at.strftime("%H:%M on %B %#d, %Y") }}

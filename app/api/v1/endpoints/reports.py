@@ -7,12 +7,14 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.api.dependencies import get_teams_poster
+from app.api.dependencies import get_teams_poster, get_internity_poster
 from app.models.settings import AppSettings
 from app.services.activity_service import activity_service
 from app.services.report_service import report_service
 from app.services.teams.poster import TeamsPoster
+from app.services.internity.poster import InternityPoster
 from app.agent.teams.graph import eod_agent
+from app.agent.internity.nodes import generate_internity_eod
 
 router = APIRouter()
 
@@ -143,7 +145,6 @@ def update_schedule_time(
         settings.schedule_time = schedule_time
     db.commit()
 
-    # Reschedule the APScheduler job
     from app.main import scheduler
 
     scheduler.reschedule_job(
@@ -155,3 +156,74 @@ def update_schedule_time(
     print(f"[Scheduler] Rescheduled to {schedule_time}")
 
     return HTMLResponse(_render_time(schedule_time, saved=True))
+
+
+# ── Internity Integration ──
+
+
+@router.post("/{report_id}/post-to-internity")
+def post_to_internity(
+    report_id: int,
+    db: Session = Depends(get_db),
+    poster: InternityPoster = Depends(get_internity_poster),
+):
+    report = report_service.repo.get(db, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    grouped = activity_service.get_grouped(db, report.date)
+    total = sum(len(v) for v in grouped.values())
+    if total == 0:
+        raise HTTPException(status_code=400, detail="No activities for this date")
+
+    grouped_dict = {}
+    for period, items in grouped.items():
+        grouped_dict[period] = [
+            {
+                "content": a.content,
+                "time": a.logged_at.strftime("%H:%M"),
+                "period": a.effective_time_period.value,
+            }
+            for a in items
+        ]
+
+    internity_eod = generate_internity_eod(grouped_dict)
+
+    try:
+        poster.post(internity_eod, report.date)
+    except Exception as e:
+        raise HTTPException(
+            status_code=502, detail=f"Failed to submit to Internity: {e}"
+        )
+
+    return RedirectResponse(
+        url=f"/reports/preview?target_date={report.date}", status_code=303
+    )
+
+
+def _render_internity_toggle(enabled: bool) -> str:
+    checked = "checked" if enabled else ""
+    label = "ON" if enabled else "OFF"
+    return f"""
+    <label class="toggle-switch">
+        <input type="checkbox" {checked}
+               hx-post="/reports/toggle-auto-post-internity"
+               hx-target="#internity-toggle-container"
+               hx-swap="innerHTML">
+        <span class="slider"></span>
+    </label>
+    <span class="toggle-label toggle-{"on" if enabled else "off"}">{label}</span>
+    """
+
+
+@router.post("/toggle-auto-post-internity")
+def toggle_auto_post_internity(db: Session = Depends(get_db)):
+    settings = db.query(AppSettings).first()
+    if not settings:
+        settings = AppSettings(auto_post_internity_enabled=True)
+        db.add(settings)
+    else:
+        settings.auto_post_internity_enabled = not settings.auto_post_internity_enabled
+    db.commit()
+    db.refresh(settings)
+    return HTMLResponse(_render_internity_toggle(settings.auto_post_internity_enabled))
