@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 from app.core.config import get_settings
@@ -24,6 +24,25 @@ def get_db():
         db.close()
 
 
+def _run_migrations():
+    """Add new columns to existing tables without deleting the database."""
+    insp = inspect(engine)
+
+    if "app_settings" not in insp.get_table_names():
+        return  # Table will be created by create_all
+
+    columns = [c["name"] for c in insp.get_columns("app_settings")]
+    if "auto_post_internity_enabled" not in columns:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE app_settings "
+                    "ADD COLUMN auto_post_internity_enabled BOOLEAN DEFAULT 0"
+                )
+            )
+        print("[DB] Added auto_post_internity_enabled column to app_settings.")
+
+
 def init_db():
     """Create all tables."""
     import app.models.activity  # noqa: F401
@@ -31,3 +50,4 @@ def init_db():
     import app.models.settings  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _run_migrations()

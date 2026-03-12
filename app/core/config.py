@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     MODEL_NAME: str = "gemini-2.5-flash"
     DATABASE_URL: str = "sqlite:///eod_reporter.db"
 
+    # Internity (aufccs.org)
+    INTERNITY_USERNAME: str = ""
+    INTERNITY_PASSWORD: str = ""
+    INTERNITY_FORM_URL: str = ""
+
     class Config:
         env_file = ".env"
 
