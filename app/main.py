@@ -10,7 +10,7 @@ from app.core.database import init_db, SessionLocal
 from app.models.settings import AppSettings
 from app.services.activity_service import activity_service
 from app.services.report_service import report_service
-from app.services.teams_service import TeamsPoster
+from app.services.teams.poster import TeamsPoster
 from app.agent.teams.graph import eod_agent
 from app.api.v1.router import api_router
 from app.api.v1.endpoints.pages import router as pages_router

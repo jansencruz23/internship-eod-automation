@@ -1,7 +1,7 @@
 from fastapi import Depends
 
 from app.core.config import Settings, get_settings
-from app.services.teams_service import TeamsPoster
+from app.services.teams.poster import TeamsPoster
 
 
 def get_teams_poster(settings: Settings = Depends(get_settings)) -> TeamsPoster:
