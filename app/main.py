@@ -44,8 +44,9 @@ def scheduled_eod_generation():
         narrative = result.get("final_narrative", result.get("draft", ""))
         report = report_service.save(db, today, narrative)
 
-        # Check auto-post setting
         app_settings_row = db.query(AppSettings).first()
+
+        # Check Teams auto-post setting
         if app_settings_row and app_settings_row.auto_post_enabled:
             try:
                 settings = get_settings()
@@ -54,9 +55,43 @@ def scheduled_eod_generation():
                 report_service.mark_posted(db, report.id)
                 print("[Scheduler] Auto-posted to Teams.")
             except Exception as e:
-                print(f"[Scheduler] Auto-post failed: {e}")
+                print(f"[Scheduler] Teams auto-post failed: {e}")
         else:
             print("[Scheduler] Draft saved. Visit /reports/preview to review and post.")
+
+        # Check Internity auto-post setting
+        if app_settings_row and app_settings_row.auto_post_internity_enabled:
+            try:
+                settings = get_settings()
+                if settings.INTERNITY_USERNAME and settings.INTERNITY_FORM_URL:
+                    from app.services.internity.poster import InternityPoster
+                    from app.agent.internity.nodes import generate_internity_eod
+
+                    grouped = activity_service.get_grouped(db, today)
+                    grouped_dict = {}
+                    for period, items in grouped.items():
+                        grouped_dict[period] = [
+                            {
+                                "content": a.content,
+                                "time": a.logged_at.strftime("%H:%M"),
+                                "period": a.effective_time_period.value,
+                            }
+                            for a in items
+                        ]
+
+                    internity_eod = generate_internity_eod(grouped_dict)
+                    poster = InternityPoster(
+                        username=settings.INTERNITY_USERNAME,
+                        password=settings.INTERNITY_PASSWORD,
+                        form_url=settings.INTERNITY_FORM_URL,
+                    )
+                    poster.post(internity_eod, today)
+                    print("[Scheduler] Auto-posted to Internity.")
+                else:
+                    print("[Scheduler] Internity credentials not configured. Skipping.")
+            except Exception as e:
+                print(f"[Scheduler] Internity auto-post failed: {e}")
+
     finally:
         db.close()
 
@@ -66,7 +101,6 @@ async def lifespan(app: FastAPI):
     # Startup
     init_db()
 
-    # Use DB schedule_time if available, otherwise fall back to .env
     db = SessionLocal()
     try:
         app_settings_row = db.query(AppSettings).first()

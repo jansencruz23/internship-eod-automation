@@ -12,7 +12,9 @@ from app.models.activity import TimePeriod
 from app.services.activity_service import activity_service
 from app.services.report_service import report_service
 from app.services.teams.poster import TeamsPoster
+from app.services.internity.poster import InternityPoster
 from app.agent.teams.graph import eod_agent
+from app.agent.internity.nodes import generate_internity_eod
 
 load_dotenv()
 init_db()
@@ -175,6 +177,107 @@ def test_webhook():
     else:
         console.print(
             "[bold red]Flow test failed. Check POWER_AUTOMATE_URL in .env.[/bold red]"
+        )
+
+
+@app.command()
+def internity(
+    target_date: str = typer.Option(
+        None, "--date", "-d", help="YYYY-MM-DD, defaults to today"
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Fill the form but don't submit (opens visible browser)",
+    ),
+):
+    """Submit the EOD report to Internity (aufccs.org)."""
+    db = SessionLocal()
+    try:
+        d = date.fromisoformat(target_date) if target_date else date.today()
+        grouped = activity_service.get_grouped(db, d)
+
+        total = sum(len(v) for v in grouped.values())
+        if total == 0:
+            console.print("[yellow]No activities logged for this date.[/yellow]")
+            raise typer.Exit(1)
+
+        grouped_dict = {}
+        for period, items in grouped.items():
+            grouped_dict[period] = [
+                {
+                    "content": a.content,
+                    "time": a.logged_at.strftime("%H:%M"),
+                    "period": a.effective_time_period.value,
+                }
+                for a in items
+            ]
+
+        console.print(
+            f"\n[bold blue]Generating Internity EOD data for "
+            f"{d.strftime('%B %#d, %Y')}...[/bold blue]"
+        )
+        internity_eod = generate_internity_eod(grouped_dict)
+
+        tasks_text = "\n".join(
+            f"  [{t.hours}h {t.minutes}m] {t.description}" for t in internity_eod.tasks
+        )
+        preview = (
+            f"[bold]Tasks:[/bold]\n{tasks_text}\n\n"
+            f"[bold]Key Successes:[/bold]\n  {internity_eod.key_successes}\n\n"
+            f"[bold]Main Challenges:[/bold]\n  {internity_eod.main_challenges}\n\n"
+            f"[bold]Plans for Tomorrow:[/bold]\n  {internity_eod.plans_for_tomorrow}"
+        )
+        console.print(Panel(preview, title="Internity EOD Data", border_style="blue"))
+
+        if not dry_run:
+            confirm = typer.confirm("Submit this to Internity?")
+            if not confirm:
+                console.print("[yellow]Cancelled.[/yellow]")
+                raise typer.Exit()
+
+        settings = get_settings()
+        if not settings.INTERNITY_USERNAME or not settings.INTERNITY_FORM_URL:
+            console.print(
+                "[bold red]Internity credentials not configured in .env.[/bold red]"
+            )
+            raise typer.Exit(1)
+
+        poster = InternityPoster(
+            username=settings.INTERNITY_USERNAME,
+            password=settings.INTERNITY_PASSWORD,
+            form_url=settings.INTERNITY_FORM_URL,
+        )
+        poster.post(internity_eod, d, dry_run=dry_run)
+
+        if dry_run:
+            console.print(
+                "[bold yellow]Dry run complete — form was filled but NOT submitted.[/bold yellow]"
+            )
+        else:
+            console.print("[bold green]Submitted to Internity![/bold green]")
+    finally:
+        db.close()
+
+
+@app.command(name="test-internity")
+def test_internity():
+    """Test the Internity (aufccs.org) login connection."""
+    settings = get_settings()
+    if not settings.INTERNITY_USERNAME:
+        console.print("[bold red]INTERNITY_USERNAME not set in .env.[/bold red]")
+        raise typer.Exit(1)
+
+    poster = InternityPoster(
+        username=settings.INTERNITY_USERNAME,
+        password=settings.INTERNITY_PASSWORD,
+        form_url=settings.INTERNITY_FORM_URL,
+    )
+    if poster.test_connection():
+        console.print("[bold green]Internity login successful![/bold green]")
+    else:
+        console.print(
+            "[bold red]Internity login failed. Check credentials in .env.[/bold red]"
         )
 
 
