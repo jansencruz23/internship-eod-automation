@@ -15,17 +15,20 @@ class InternityPoster:
         self.base_url = form_url.rsplit("/", 2)[0]  # https://aufccs.org
 
     def post(
-        self, eod_data: InternityEOD, target_date: date, dry_run: bool = False
+        self, eod_data: InternityEOD, target_date: date, auto_submit: bool = False
     ) -> bool:
         """Automate the aufccs.org EOD form submission.
+
+        Always opens a visible browser so the user can watch.
+        After filling, shows a confirm dialog unless auto_submit is True.
 
         Args:
             eod_data: Structured EOD data from the LLM.
             target_date: The date to submit the report for.
-            dry_run: If True, opens a visible browser and pauses before submit.
+            auto_submit: If True, submits immediately without asking.
         """
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=not dry_run)
+            browser = p.chromium.launch(headless=False, slow_mo=300)
             page = browser.new_page()
 
             try:
@@ -50,16 +53,17 @@ class InternityPoster:
                     page, "Plans for Tomorrow", eod_data.plans_for_tomorrow
                 )
 
-                if dry_run:
-                    print(
-                        "[Internity] Dry run — form filled but NOT submitted. "
-                        "Close the browser or press Resume in Inspector to exit."
-                    )
-                    page.pause()  # opens Playwright Inspector for manual inspection
+                # Step 5: Submit or leave for user
+                if auto_submit:
+                    self._submit(page)
                     return True
 
-                # Step 5: Submit
-                self._submit(page)
+                print(
+                    "[Internity] Form filled! Review it in the browser.\n"
+                    "  → Click 'Submit Report' yourself to submit, or close the browser to cancel."
+                )
+                # Wait for the user to either submit or close the browser
+                page.wait_for_event("close", timeout=0)
                 return True
 
             except PlaywrightTimeout as e:

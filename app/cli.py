@@ -185,13 +185,17 @@ def internity(
     target_date: str = typer.Option(
         None, "--date", "-d", help="YYYY-MM-DD, defaults to today"
     ),
-    dry_run: bool = typer.Option(
+    auto_submit: bool = typer.Option(
         False,
-        "--dry-run",
-        help="Fill the form but don't submit (opens visible browser)",
+        "--auto-submit",
+        help="Submit automatically without asking (skips browser confirm dialog)",
     ),
 ):
-    """Submit the EOD report to Internity (aufccs.org)."""
+    """Submit the EOD report to Internity (aufccs.org).
+
+    Opens a visible browser so you can watch the form being filled.
+    A confirm dialog appears before submitting (unless --auto-submit is used).
+    """
     db = SessionLocal()
     try:
         d = date.fromisoformat(target_date) if target_date else date.today()
@@ -230,12 +234,6 @@ def internity(
         )
         console.print(Panel(preview, title="Internity EOD Data", border_style="blue"))
 
-        if not dry_run:
-            confirm = typer.confirm("Submit this to Internity?")
-            if not confirm:
-                console.print("[yellow]Cancelled.[/yellow]")
-                raise typer.Exit()
-
         settings = get_settings()
         if not settings.INTERNITY_USERNAME or not settings.INTERNITY_FORM_URL:
             console.print(
@@ -243,19 +241,21 @@ def internity(
             )
             raise typer.Exit(1)
 
+        console.print(
+            "\n[bold]Opening browser — watch the form being filled...[/bold]"
+        )
+
         poster = InternityPoster(
             username=settings.INTERNITY_USERNAME,
             password=settings.INTERNITY_PASSWORD,
             form_url=settings.INTERNITY_FORM_URL,
         )
-        poster.post(internity_eod, d, dry_run=dry_run)
+        submitted = poster.post(internity_eod, d, auto_submit=auto_submit)
 
-        if dry_run:
-            console.print(
-                "[bold yellow]Dry run complete — form was filled but NOT submitted.[/bold yellow]"
-            )
-        else:
+        if submitted:
             console.print("[bold green]Submitted to Internity![/bold green]")
+        else:
+            console.print("[bold yellow]Submission cancelled.[/bold yellow]")
     finally:
         db.close()
 

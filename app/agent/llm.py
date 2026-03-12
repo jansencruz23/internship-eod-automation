@@ -13,6 +13,6 @@ def get_llm() -> ChatGoogleGenerativeAI:
         _llm = ChatGoogleGenerativeAI(
             model=settings.MODEL_NAME,
             google_api_key=settings.GOOGLE_API_KEY,
-            max_output_tokens=1024,
+            max_output_tokens=4096,
         )
     return _llm
