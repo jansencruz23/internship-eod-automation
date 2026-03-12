@@ -2,7 +2,7 @@
 {% block title %}Preview - EOD Reporter{% endblock %}
 
 {% block content %}
-<h1>EOD Preview - {{ target_date.strftime("%B %#d, %Y") }}</h1>
+<h1>EOD Preview — {{ target_date.strftime("%B %#d, %Y") }}</h1>
 
 {% if report %}
 <section class="card">
@@ -11,7 +11,6 @@
     </div>
 
     <div class="preview-box">
-        <h3>{{ target_date.strftime("%B %#d, %Y") }}</h3>
         <p>{{ report.narrative }}</p>
     </div>
 
@@ -20,7 +19,7 @@
         <summary>Edit narrative</summary>
         <form method="post" action="/reports/{{ report.id }}/update">
             <textarea name="narrative" rows="8">{{ report.narrative }}</textarea>
-            <button type="submit">Save Changes</button>
+            <button type="submit" class="btn-secondary">Save Changes</button>
         </form>
     </details>
 
@@ -28,13 +27,15 @@
         <form method="post" action="/reports/{{ report.id }}/post-to-teams" class="post-form">
             <button type="submit" class="btn-primary btn-post"
                     onclick="return confirm('Post this EOD to Teams?')">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
                 Post to Teams
             </button>
         </form>
 
         <form method="post" action="/reports/{{ report.id }}/post-to-internity" class="post-form">
-            <button type="submit" class="btn-internity btn-post"
-                    onclick="return confirm('Submit this EOD to Internity (aufccs.org)?\nThis will open a headless browser and fill the form automatically.')">
+            <button type="submit" class="btn-primary btn-internity"
+                    onclick="return confirm('Submit this EOD to Internity (aufccs.org)?\nA browser will open with the form filled for you to review.')">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
                 Submit to Internity
             </button>
         </form>
@@ -46,13 +47,19 @@
     {% endif %}
 
     <form method="post" action="/reports/generate?target_date={{ target_date.isoformat() }}">
-        <button type="submit" class="btn-secondary">Regenerate</button>
+        <button type="submit" class="btn-secondary">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+            Regenerate
+        </button>
     </form>
 </section>
 {% else %}
 <section class="card">
-    <p>No report generated for this date yet.</p>
-    <a href="/" class="btn-primary">Go to Dashboard</a>
+    <div class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+        <p>No report generated for this date yet.</p>
+    </div>
+    <a href="/" class="btn-primary" style="display: inline-flex; margin-top: 1rem;">Go to Dashboard</a>
 </section>
 {% endif %}
 {% endblock %}

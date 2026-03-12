@@ -2,30 +2,54 @@
 {% block title %}Dashboard - EOD Reporter{% endblock %}
 
 {% block content %}
-<h1>{{ today.strftime("%B %#d, %Y") }}</h1>
+{% set total = grouped_activities.morning|length + grouped_activities.afternoon|length + grouped_activities.evening|length %}
+
+<h1 class="page-date">
+    <span class="day-name">{{ today.strftime("%A") }}</span>
+    {{ today.strftime("%B %#d, %Y") }}
+</h1>
 
 <!-- Quick Log Form -->
 <section class="card">
-    <h2>Log Activity</h2>
+    <h2>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></svg>
+        Log Activity
+    </h2>
     <form method="post" action="/activities/log" class="log-form">
         <input
             type="text"
             name="content"
-            placeholder="What did you just do? (e.g., 'Had team huddle for Project 2')"
+            placeholder="What did you just do?"
             required
             autofocus
         >
-        <button type="submit">Log</button>
+        <button type="submit">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Log
+        </button>
     </form>
 </section>
 
 <!-- Today's Activities -->
 <section class="card">
-    <h2>Today's Activities</h2>
+    <h2>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        Today's Activities
+        {% if total > 0 %}<span class="count-badge">{{ total }}</span>{% endif %}
+    </h2>
 
     {% for period in ["morning", "afternoon", "evening"] %}
     <div class="time-group">
-        <h3>{{ period | capitalize }}</h3>
+        <h3>
+            {% if period == "morning" %}
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+            {% elif period == "afternoon" %}
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>
+            {% else %}
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+            {% endif %}
+            {{ period | capitalize }}
+        </h3>
         {% if grouped_activities[period] %}
             {% for activity in grouped_activities[period] %}
             <div class="activity-item">
@@ -36,33 +60,48 @@
                             hx-delete="/activities/{{ activity.id }}"
                             hx-target="closest .activity-item"
                             hx-swap="outerHTML"
-                            hx-confirm="Delete this activity?">x</button>
+                            hx-confirm="Delete this activity?">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                    </button>
                 </div>
             </div>
             {% endfor %}
         {% else %}
-            <p class="empty">No activities logged</p>
+            <div class="empty-state">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+                <p>No activities yet</p>
+            </div>
         {% endif %}
     </div>
     {% endfor %}
 </section>
 
+<!-- Bottom Row: Generate + Settings -->
+<div class="dashboard-actions">
+
 <!-- Generate EOD -->
 <section class="card">
-    <h2>Generate EOD Report</h2>
+    <h2>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        Generate Report
+    </h2>
     <form method="post" action="/reports/generate">
         <button type="submit" class="btn-primary" {% if not has_activities %}disabled{% endif %}>
-            Generate Report
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+            Generate EOD
         </button>
         {% if not has_activities %}
-        <p class="hint">Log some activities first before generating a report.</p>
+        <p class="hint">Log some activities first.</p>
         {% endif %}
     </form>
 </section>
 
 <!-- Scheduler Settings -->
 <section class="card">
-    <h2>Scheduler Settings</h2>
+    <h2>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        Scheduler
+    </h2>
 
     <div class="setting-row">
         <span>Scheduled time</span>
@@ -92,7 +131,7 @@
     </div>
 
     <div class="setting-row">
-        <span>Auto-fill Internity (browser popup)</span>
+        <span>Auto-fill Internity</span>
         <div id="internity-toggle-container">
             <label class="toggle-switch">
                 <input type="checkbox" {{ "checked" if auto_post_internity_enabled }}
@@ -107,6 +146,8 @@
         </div>
     </div>
 
-    <p class="hint">The report is generated daily at the scheduled time. When auto-post is on, it posts to Teams automatically. When auto-fill Internity is on, a browser opens with the form filled for you to review and submit manually.</p>
+    <p class="hint">Report generated daily at the scheduled time. Auto-post sends to Teams. Auto-fill opens a browser with the Internity form pre-filled for manual review.</p>
 </section>
+
+</div>
 {% endblock %}
