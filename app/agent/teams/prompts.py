@@ -24,7 +24,7 @@ narrative-style summaries that read naturally and professionally.
 - Start with how the day began and flow naturally through activities
 
 [Output Format]
-- 1-2 paragraphs, approximately 100-200 words
+- A single concise paragraph of 4-6 sentences
 - Plain text only, no markdown formatting
 
 [Constraints]
@@ -32,7 +32,8 @@ narrative-style summaries that read naturally and professionally.
 - Do NOT add a greeting, sign-off, or date header
 - Do NOT fabricate details not present in the input
 - Do NOT use overly formal or corporate language
-- Keep it concise — no filler sentences"""
+- Keep it concise — no filler sentences
+- Strictly 4-6 sentences, no more"""
 
 # ──────────────────────────────────────────────
 # Review Prompt — Chain-of-Thought with Self-Verification
@@ -52,7 +53,7 @@ Step 1 - NARRATIVE FORMAT: Is it paragraph form? Any bullet points or numbered l
 Step 2 - CHRONOLOGICAL FLOW: Does it follow morning to afternoon to evening order?
 Step 3 - TONE: Professional but conversational? Not too formal, not too casual?
 Step 4 - ACCURACY: Does it only mention activities from the input? Any fabricated details?
-Step 5 - LENGTH: Is it 1-2 paragraphs, approximately 80-250 words?
+Step 5 - LENGTH: Is it a single paragraph of 4-6 sentences? Reject if it exceeds 6 sentences.
 Step 6 - TRANSITIONS: Does it use natural transitions between activities?
 
 After evaluating all steps, decide whether to approve.
