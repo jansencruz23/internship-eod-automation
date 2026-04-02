@@ -705,3 +705,93 @@ input[type="time"]:focus {
     gap: 0.5rem;
   }
 }
+
+/* ── Monthly Summary ── */
+.monthly-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.month-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.month-label {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--foreground);
+  min-width: 10rem;
+  text-align: center;
+}
+.btn-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--foreground);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.btn-nav:hover {
+  background: var(--secondary-hover);
+  border-color: var(--border-strong);
+}
+
+.summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-base);
+}
+.summary-table thead th {
+  background: var(--foreground);
+  color: var(--primary-foreground);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.75rem 1rem;
+  text-align: left;
+}
+.summary-table tbody td {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  vertical-align: top;
+  line-height: 1.7;
+}
+.summary-table tbody tr:nth-child(even) td {
+  background: var(--muted);
+}
+.col-week {
+  width: 140px;
+  white-space: nowrap;
+}
+.week-label {
+  display: block;
+  font-weight: 700;
+  color: var(--foreground);
+}
+.week-dates {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  margin-top: 0.125rem;
+}
+.col-summary {
+  color: var(--foreground);
+}
+
+@media (max-width: 600px) {
+  .monthly-controls { flex-direction: column; align-items: stretch; }
+  .month-selector { justify-content: center; }
+  .summary-table { font-size: var(--text-sm); }
+  .col-week { width: auto; }
+}

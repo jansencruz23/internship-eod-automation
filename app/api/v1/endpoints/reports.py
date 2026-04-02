@@ -2,7 +2,7 @@ import re
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi import APIRouter, Depends, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -228,3 +228,41 @@ def toggle_auto_post_internity(db: Session = Depends(get_db)):
     db.commit()
     db.refresh(settings)
     return HTMLResponse(_render_internity_toggle(settings.auto_post_internity_enabled))
+
+
+# -- Monthly Summary --
+
+
+@router.post("/generate-monthly-summary")
+def generate_monthly_summary_endpoint(
+    request: Request,
+    year: int = Form(...),
+    month: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    from fastapi.templating import Jinja2Templates
+
+    from app.agent.monthly.nodes import generate_monthly_summary
+
+    reports = report_service.get_by_month(db, year, month)
+    if not reports:
+        raise HTTPException(
+            status_code=400, detail="No reports found for this month"
+        )
+
+    weekly_summaries = generate_monthly_summary(reports, year, month)
+
+    templates = Jinja2Templates(directory="app/templates")
+    month_name = date(year, month, 1).strftime("%B %Y")
+
+    return templates.TemplateResponse(
+        "monthly.html",
+        {
+            "request": request,
+            "year": year,
+            "month": month,
+            "month_name": month_name,
+            "reports": reports,
+            "weekly_summaries": weekly_summaries,
+        },
+    )

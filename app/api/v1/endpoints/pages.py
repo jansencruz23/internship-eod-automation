@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -64,4 +64,32 @@ def report_history(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(
         "history.html",
         {"request": request, "reports": reports},
+    )
+
+
+@router.get("/reports/monthly", response_class=HTMLResponse)
+def monthly_summary_page(
+    request: Request,
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    today = date.today()
+    target_year = year or today.year
+    target_month = month or today.month
+
+    # Build list of available months (months that have reports)
+    reports = report_service.get_by_month(db, target_year, target_month)
+
+    # Check for cached weekly summaries in session (generated via POST)
+    return templates.TemplateResponse(
+        "monthly.html",
+        {
+            "request": request,
+            "year": target_year,
+            "month": target_month,
+            "month_name": date(target_year, target_month, 1).strftime("%B %Y"),
+            "reports": reports,
+            "weekly_summaries": None,
+        },
     )

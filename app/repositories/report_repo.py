@@ -57,5 +57,18 @@ class ReportRepository(BaseRepository[EODReport]):
     def get_history(self, db: Session, limit: int = 30) -> list[EODReport]:
         return db.query(EODReport).order_by(EODReport.date.desc()).limit(limit).all()
 
+    def get_by_month(self, db: Session, year: int, month: int) -> list[EODReport]:
+        """Get all reports for a given month, ordered by date ascending."""
+        from calendar import monthrange
+
+        first_day = date(year, month, 1)
+        last_day = date(year, month, monthrange(year, month)[1])
+        return (
+            db.query(EODReport)
+            .filter(EODReport.date >= first_day, EODReport.date <= last_day)
+            .order_by(EODReport.date.asc())
+            .all()
+        )
+
 
 report_repo = ReportRepository()

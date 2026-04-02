@@ -28,5 +28,10 @@ class ReportService:
     def get_history(self, db: Session, limit: int = 30) -> list[EODReport]:
         return self.repo.get_history(db, limit)
 
+    def get_by_month(
+        self, db: Session, year: int, month: int
+    ) -> list[EODReport]:
+        return self.repo.get_by_month(db, year, month)
+
 
 report_service = ReportService()
