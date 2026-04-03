@@ -167,6 +167,8 @@ def post_to_internity(
     db: Session = Depends(get_db),
     poster: InternityPoster = Depends(get_internity_poster),
 ):
+    from urllib.parse import quote
+
     report = report_service.repo.get(db, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
@@ -187,13 +189,29 @@ def post_to_internity(
             for a in items
         ]
 
-    internity_eod = generate_internity_eod(grouped_dict)
+    try:
+        internity_eod = generate_internity_eod(grouped_dict)
+    except Exception as e:
+        print(f"[Internity] Failed to generate structured EOD: {e}")
+        error_msg = quote(f"Failed to generate Internity data: {e}")
+        return RedirectResponse(
+            url=f"/reports/preview?target_date={report.date}&error={error_msg}",
+            status_code=303,
+        )
+
+    # Validate task data before posting
+    for task in internity_eod.tasks:
+        task.hours = max(0, min(8, task.hours))
+        task.minutes = max(0, min(59, task.minutes))
 
     try:
         poster.post(internity_eod, report.date)
     except Exception as e:
-        raise HTTPException(
-            status_code=502, detail=f"Failed to submit to Internity: {e}"
+        print(f"[Internity] Failed to submit form: {e}")
+        error_msg = quote(f"Failed to submit to Internity: {e}")
+        return RedirectResponse(
+            url=f"/reports/preview?target_date={report.date}&error={error_msg}",
+            status_code=303,
         )
 
     return RedirectResponse(

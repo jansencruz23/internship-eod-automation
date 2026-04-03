@@ -4,6 +4,13 @@
 {% block content %}
 <h1>EOD Preview — {{ target_date.strftime("%B %#d, %Y") }}</h1>
 
+{% if error %}
+<div class="error-banner">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    {{ error }}
+</div>
+{% endif %}
+
 {% if report %}
 <section class="card">
     <div class="status-badge status-{{ report.status.value }}">

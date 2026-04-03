@@ -26,6 +26,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         settings.auto_post_internity_enabled if settings else False
     )
     schedule_time = settings.schedule_time if settings else "15:35"
+    report = report_service.get_by_date(db, today)
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -33,6 +34,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "today": today,
             "grouped_activities": grouped,
             "has_activities": len(all_activities) > 0,
+            "has_report": report is not None,
             "auto_post_enabled": auto_post_enabled,
             "auto_post_internity_enabled": auto_post_internity_enabled,
             "schedule_time": schedule_time,
@@ -44,6 +46,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 def preview_report(
     request: Request,
     target_date: Optional[date] = None,
+    error: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     target = target_date or date.today()
@@ -54,6 +57,7 @@ def preview_report(
             "request": request,
             "report": report,
             "target_date": target,
+            "error": error,
         },
     )
 
