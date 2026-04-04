@@ -11,6 +11,10 @@ build/
 .venv/
 venv/
 env/
+node_modules/
+
+# Catmit
+.catmitrc.json
 
 # uv
 .python-version
