@@ -76,9 +76,7 @@ def group_reports_by_week(reports: list[EODReport], year: int, month: int) -> li
 def _format_daily_reports(reports: list[EODReport]) -> str:
     lines = []
     for r in reports:
-        day_name = r.date.strftime("%A")
-        date_str = r.date.strftime("%B %d")
-        lines.append(f"{day_name}, {date_str}:\n{r.narrative}")
+        lines.append(r.narrative)
     return "\n\n".join(lines)
 
 

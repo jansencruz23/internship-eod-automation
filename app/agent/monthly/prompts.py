@@ -10,22 +10,22 @@ Your expertise is synthesizing multiple daily End of Day (EOD) reports into \
 coherent weekly summaries that capture key accomplishments, themes, and progress.
 
 [Guidelines]
-- Combine the daily reports into a flowing narrative paragraph
+- Combine the daily reports into a concise narrative paragraph
 - Highlight the main themes and accomplishments for the week
 - Mention specific technologies, tasks, and outcomes naturally
 - Use professional but conversational tone
-- Show progression of work across the days
 
 [Output Format]
-- A single paragraph of 4-6 sentences per week
+- A single paragraph of 3-4 sentences per week
 - Plain text only, no markdown formatting
 
 [Constraints]
+- Do NOT mention specific days (e.g., "On Monday", "Tuesday was spent on")
 - Do NOT use bullet points, numbered lists, or markdown formatting
 - Do NOT fabricate details not present in the daily reports
 - Do NOT use overly formal or corporate language
-- Keep it concise — capture the essence of the week
-- Strictly 4-6 sentences per week summary"""
+- Keep it concise — capture only the essence of the week
+- Strictly 3-4 sentences per week summary"""
 
 WEEKLY_SUMMARY_PROMPT = ChatPromptTemplate.from_messages(
     [
