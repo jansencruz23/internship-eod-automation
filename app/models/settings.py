@@ -10,3 +10,4 @@ class AppSettings(Base):
     auto_post_enabled = Column(Boolean, default=False)
     auto_post_internity_enabled = Column(Boolean, default=False)
     schedule_time = Column(String, default="15:35")
+    teams_sentence_count = Column(Integer, default=5)

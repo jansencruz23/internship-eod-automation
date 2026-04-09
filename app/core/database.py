@@ -42,6 +42,16 @@ def _run_migrations():
             )
         print("[DB] Added auto_post_internity_enabled column to app_settings.")
 
+    if "teams_sentence_count" not in columns:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE app_settings "
+                    "ADD COLUMN teams_sentence_count INTEGER DEFAULT 5"
+                )
+            )
+        print("[DB] Added teams_sentence_count column to app_settings.")
+
 
 def init_db():
     """Create all tables."""

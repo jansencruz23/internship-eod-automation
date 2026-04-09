@@ -60,11 +60,13 @@ def generate_draft(state: EODState) -> dict:
 
     activities_text = format_activities_for_prompt(state["grouped_activities"])
     few_shot = format_few_shot_examples()
+    sentence_count = state.get("sentence_count", 5)
 
     response = chain.invoke(
         {
             "few_shot_examples": few_shot,
             "activities_text": activities_text,
+            "sentence_count": sentence_count,
         }
     )
 
@@ -79,6 +81,7 @@ def generate_draft(state: EODState) -> dict:
 def self_review(state: EODState) -> dict:
     llm = get_llm()
     activities_text = format_activities_for_prompt(state["grouped_activities"])
+    sentence_count = state.get("sentence_count", 5)
 
     try:
         structured_llm = llm.with_structured_output(ReviewResult)
@@ -88,6 +91,7 @@ def self_review(state: EODState) -> dict:
             {
                 "activities_text": activities_text,
                 "draft": state["draft"],
+                "sentence_count": sentence_count,
             }
         )
 
@@ -116,6 +120,7 @@ def revise_draft(state: EODState) -> dict:
 
     activities_text = format_activities_for_prompt(state["grouped_activities"])
     few_shot = format_few_shot_examples()
+    sentence_count = state.get("sentence_count", 5)
 
     response = chain.invoke(
         {
@@ -123,6 +128,7 @@ def revise_draft(state: EODState) -> dict:
             "activities_text": activities_text,
             "draft": state["draft"],
             "feedback": state["review_feedback"],
+            "sentence_count": sentence_count,
         }
     )
 

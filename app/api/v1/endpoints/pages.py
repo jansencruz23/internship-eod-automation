@@ -26,6 +26,11 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         settings.auto_post_internity_enabled if settings else False
     )
     schedule_time = settings.schedule_time if settings else "15:35"
+    teams_sentence_count = (
+        settings.teams_sentence_count
+        if settings and settings.teams_sentence_count
+        else 5
+    )
     report = report_service.get_by_date(db, today)
     return templates.TemplateResponse(
         "dashboard.html",
@@ -38,6 +43,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "auto_post_enabled": auto_post_enabled,
             "auto_post_internity_enabled": auto_post_internity_enabled,
             "schedule_time": schedule_time,
+            "teams_sentence_count": teams_sentence_count,
         },
     )
 

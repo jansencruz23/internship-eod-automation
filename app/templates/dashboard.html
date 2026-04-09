@@ -137,6 +137,17 @@
     </div>
 
     <div class="setting-row">
+        <span>Teams sentence count</span>
+        <div id="sentence-count-container">
+            <input type="number" name="sentence_count" value="{{ teams_sentence_count }}" min="2" max="10"
+                   hx-post="/reports/update-sentence-count"
+                   hx-target="#sentence-count-container"
+                   hx-swap="innerHTML"
+                   hx-trigger="change">
+        </div>
+    </div>
+
+    <div class="setting-row">
         <span>Auto-fill Internity</span>
         <div id="internity-toggle-container">
             <label class="toggle-switch">
@@ -152,7 +163,7 @@
         </div>
     </div>
 
-    <p class="hint">Report generated daily at the scheduled time. Auto-post sends to Teams. Auto-fill opens a browser with the Internity form pre-filled for manual review.</p>
+    <p class="hint">Report generated daily at the scheduled time. Sentence count controls the Teams summary length. Auto-post sends to Teams. Auto-fill opens a browser with the Internity form pre-filled for manual review.</p>
 </section>
 
 </div>

@@ -600,6 +600,7 @@ details summary {
   gap: 0.5rem;
 }
 
+input[type="number"],
 input[type="time"] {
   padding: 0.4rem 0.6rem;
   border: 1.5px solid var(--input);
@@ -612,6 +613,7 @@ input[type="time"] {
   transition: border-color var(--duration-fast) var(--ease-out),
               box-shadow var(--duration-fast) var(--ease-out);
 }
+input[type="number"]:focus,
 input[type="time"]:focus {
   border-color: var(--ring);
   box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.1);

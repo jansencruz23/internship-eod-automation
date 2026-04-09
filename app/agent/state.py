@@ -10,3 +10,4 @@ class EODState(TypedDict):
     review_approved: bool  # Whether the review passed
     revision_count: int  # Number of revisions (cap at 2)
     final_narrative: str  # Approved narrative
+    sentence_count: int  # Preferred number of sentences for Teams summary

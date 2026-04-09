@@ -29,6 +29,9 @@ def generate_report(target_date: Optional[date] = None, db: Session = Depends(ge
             status_code=400, detail="No activities logged for this date"
         )
 
+    settings = db.query(AppSettings).first()
+    sentence_count = settings.teams_sentence_count if settings and settings.teams_sentence_count else 5
+
     result = eod_agent.invoke(
         {
             "date": target.isoformat(),
@@ -39,6 +42,7 @@ def generate_report(target_date: Optional[date] = None, db: Session = Depends(ge
             "review_approved": False,
             "revision_count": 0,
             "final_narrative": "",
+            "sentence_count": sentence_count,
         }
     )
 
@@ -156,6 +160,37 @@ def update_schedule_time(
     print(f"[Scheduler] Rescheduled to {schedule_time}")
 
     return HTMLResponse(_render_time(schedule_time, saved=True))
+
+
+def _render_sentence_count(count: int, saved: bool = False) -> str:
+    msg = '<span class="save-confirm">Saved!</span>' if saved else ""
+    return f"""
+    <input type="number" name="sentence_count" value="{count}" min="2" max="10"
+           hx-post="/reports/update-sentence-count"
+           hx-target="#sentence-count-container"
+           hx-swap="innerHTML"
+           hx-trigger="change">
+    {msg}
+    """
+
+
+@router.post("/update-sentence-count")
+def update_sentence_count(
+    sentence_count: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    if not (2 <= sentence_count <= 10):
+        raise HTTPException(status_code=400, detail="Sentence count must be between 2 and 10")
+
+    settings = db.query(AppSettings).first()
+    if not settings:
+        settings = AppSettings(teams_sentence_count=sentence_count)
+        db.add(settings)
+    else:
+        settings.teams_sentence_count = sentence_count
+    db.commit()
+
+    return HTMLResponse(_render_sentence_count(sentence_count, saved=True))
 
 
 # ── Internity Integration ──
