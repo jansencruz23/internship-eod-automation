@@ -2,7 +2,7 @@ import uvicorn
 
 
 def main():
-    uvicorn.run("app.main:app", reload=True, port=8000)
+    uvicorn.run("app.main:app", reload=True, port=6767)
 
 
 if __name__ == "__main__":

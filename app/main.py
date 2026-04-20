@@ -28,6 +28,13 @@ def scheduled_eod_generation():
             print("[Scheduler] No activities logged today. Skipping.")
             return
 
+        app_settings_row = db.query(AppSettings).first()
+        sentence_count = (
+            app_settings_row.teams_sentence_count
+            if app_settings_row and app_settings_row.teams_sentence_count
+            else 5
+        )
+
         print(f"[Scheduler] Generating EOD for {today}...")
         result = eod_agent.invoke(
             {
@@ -39,12 +46,11 @@ def scheduled_eod_generation():
                 "review_approved": False,
                 "revision_count": 0,
                 "final_narrative": "",
+                "sentence_count": sentence_count,
             }
         )
         narrative = result.get("final_narrative", result.get("draft", ""))
         report = report_service.save(db, today, narrative)
-
-        app_settings_row = db.query(AppSettings).first()
 
         # Check Teams auto-post setting
         if app_settings_row and app_settings_row.auto_post_enabled:
@@ -118,6 +124,7 @@ async def lifespan(app: FastAPI):
         hour=hour,
         minute=minute,
         id="eod_generation",
+        misfire_grace_time=60,
     )
     scheduler.start()
     print(f"[Scheduler] EOD generation scheduled daily at {schedule_time}")
